@@ -3,8 +3,8 @@ title: Mechanics Parity Status
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.10-9bf9078
-last_verified: 2026-09-01
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
 source_of_truth: src/optimizer/outcome.ts, src/optimizer/skills.ts, src/optimizer/harmony.ts, src/optimizer/harmonyRegistry.ts, src/optimizer/gameTypes.ts, src/optimizer/state.ts, src/optimizer/search.ts, src/optimizer/nativeMcts.ts, src/modContent/harmonyState.ts, crates/craftbuddy-engine/*
 review_cycle_days: 30
 related_files:
@@ -16,22 +16,44 @@ related_files:
 
 # Mechanics Parity Status
 
-Which AFNM **0.7.10** crafting mechanics CraftBuddy models, how that is proven, and what is genuinely still approximate.
+Which AFNM **0.7.17** crafting mechanics CraftBuddy models, how that is proven, and what is genuinely still approximate.
 
-Authority order: installed runtime bundle → tests → this document. When they disagree, the runtime wins and this file is wrong. `docs/project/RUNTIME_EVIDENCE.md` holds the extracted runtime source, currently for build `0.7.10-9bf9078`.
+Authority order: installed runtime bundle → tests → this document. When they disagree, the runtime wins and this file is wrong. `docs/project/RUNTIME_EVIDENCE.md` holds the extracted runtime source, currently for build `0.7.17-d8ae6ce`.
 
 ## How parity is proven
 
 | Layer | Proof |
 | --- | --- |
-| Formula/transition parity vs the game | `gameAccuracy.test.ts`, `runtimeParity.test.ts`, `skills.test.ts`, `harmony.test.ts`, verified against the extracted 0.7.6 bundle |
+| Formula/transition parity vs the game | `gameAccuracy.test.ts`, `runtimeParity.test.ts`, `skills.test.ts`, `harmony.test.ts`, plus `runtime0717.test.ts` and `returningCycle.test.ts` for the current retarget |
 | Outcome/band/tier model | `outcome.test.ts`, `outcomeProjection.test.ts` |
 | TypeScript ↔ Rust engine parity | the differential corpus: `src/__tests__/fixtures/differentialCorpus.ts` → `engineDifferential.test.ts` (TS side) and `crates/craftbuddy-engine/tests/differential_corpus.json` → `differential_tests.rs` (Rust side) |
 | Multi-turn behaviour | `craftSimulation.test.ts`, replay fixtures in `src/__tests__/__fixtures__/replay-snapshots/` |
 
-The corpus is schema v3 and covers **137 scenarios / 1,471 transitions**, with `expected` asserting qi, stability, stability penalty, completion, perfection, toxicity, harmony, step, completion bonus, cooldowns, the active-buff set (including per-buff `internalState`), `items`, `consumedPillsThisTurn`, and a `harmonyData` digest. Regenerate with `bun run optimizer:differential-corpus`; never hand-edit the JSON.
+The corpus is schema v4 and covers **177 scenarios / 1,554 cases**: **1,352 legal transitions** and **202 illegal-action checks**. `expected` asserts qi, droplets and droplet cap, additive item effectiveness, stability, stability penalty, completion, perfection, toxicity, harmony, step, completion bonus, cooldowns, the active-buff set (including per-buff `internalState`), `items`, `consumedPillsThisTurn`, and a `harmonyData` digest. Regenerate with `bun run optimizer:differential-corpus`; never hand-edit the JSON.
 
-The wider suites report **929 Jest tests across 35 suites** and **70 passing Rust tests** (plus 3 `#[ignore]`d profiling tests).
+The 0.7.17 retarget adds focused TS/Rust tests for payment phases, new-name buff survival and Returning Cycle. Current release-gate results are recorded in `RELEASE_NOTES_6.8.0.md`; the three Rust profiling harnesses remain intentionally ignored during ordinary tests.
+
+## The 0.7.17 retarget
+
+Runtime source and offsets: `RUNTIME_EVIDENCE.md` §17. The model is mirrored in TypeScript and Rust; no scoring constants or outcome thresholds changed.
+
+| Mechanic | Model |
+| --- | --- |
+| Cost channels | `qiCostReduction`, `qiCostPenalty`, `stabilityCostReduction`, `stabilityCostPenalty` are independent zero-based multiplicative channels. Stack-scaled contributions are folded once; flat surcharge, condition and harmony ordering follow the runtime. Legacy percentage inputs normalize at the state boundary; legacy buff adjustments apply only to the side with an actual legacy stat, never floor an untouched fractional modern baseline. |
+| Payment phases | Toxicity → droplets → buff costs → success-chance capture → effect masteries → recomputed Qi/stability payment → success-only technique effects. Failed actions still pay, retain mastery effects and resolve harmony. |
+| Chance payment buffs | Transient independent payment branches produce current-action expected costs without branching recursive search or redesigning future probabilistic buff state. The guaranteed survivability floor remains distinct from EV. |
+| Droplets | `qiDroplets` / `maxQiDroplets`, `dropletCost`, legality, payment, cloning, replay and native bridge all preserve the runtime payload. New Stablizing Circuit data flows through the generic effect path. |
+| Buff tick membership | Snapshot pre-action buff names; only those names receive type-specific/ordinary ticks. A new name survives its creation turn; a refreshed existing name still ticks. |
+| Scaling and triggers | Preserve `additionalVariables`, room-effectiveness opt-in, nested scaling multiplier/step rules, integer rounding and `setState.keys`. Triggered blocks run general buff effects with a re-entry guard and running bars, so Converging Jade's completion also feeds Bifang's `percentGained` normally. |
+| Item effectiveness | Live additive stat, neutral 0, carried through extraction/state/copy/cache/replay/worker/native bridge. `isItem` multiplies by `1 + itemEffectiveness / 100`; Calming Mind Pill's 4 stacks remain 4 at neutral. |
+| Worker state | Exhaustive wire schema and JSON round-trip regression preserve every state field, including simultaneous cost channels/full reduction, droplets, Returning Cycle and native variables; only the derived cache key is excluded. |
+| Invasions | Fusion/Refinement Invasion are stackable ticking durations; their unscaled stat penalties are not multiplied by held stacks. |
+| Returning Cycle | Ninth harmony, complexity 1.3, starting harmony 0, no recommendations. Fixed `chargeSize = max(1, raw starting maxpool × .1)`; reported nonnegative Qi payment accrues even on failure. Each full charge drains 3 harmony and 30% of its charge size in Qi per action. Stabilize drains first, then releases all charges for +10 harmony and +5 Returned Precision each, retaining the partial stored-Qi remainder. Missing/invalid data reinitializes. |
+| Returned Precision | Ordinary stackable buff: +1 crit point per stack, loses one stack per subsequent action. Existing stacks tick before release; fresh release stacks neither decay nor boost the release action. |
+
+Captivating Cadence (0.7.11/0.7.12) remains modelled: non-repeating types extend a chain, granting `+3 × chain` harmony after its first entry and +2% control/intensity per chain point. Repeating a type clears it, costs 50 harmony and 1 max stability; complexity is 1.5.
+
+Corpus sanity: all 142 previous scenarios and their legality outcomes remain; the seeded eight-type random pool is frozen rather than remapped by the ninth registry entry. Two registry matrices plus 12 retarget and 16 Cycle cases originally added 30 scenarios / 50 cases. Review added five cases for fractional cost channels, combined Jade+Bifang, and Calming Mind at neutral/positive/negative effectiveness. Fresh comparison found no outcome changes in the existing 172 scenarios; item-effectiveness scalar checks were added throughout.
 
 ## The 0.7.6 change: Eccentric Decree scores per bar application
 
@@ -46,7 +68,7 @@ The runtime moved Eccentric Decree out of the end-of-turn `processEffect` hook i
 | Event construction | `src/optimizer/skills.ts`: `scaleBarContributions` → `buildBarChangeEvents`, only when `needsBarContributions()` (sublime **and** `craftingType === 'eccentricDecree'`) |
 | Fallback | no events → the pre-0.7.6 single end-of-turn delta, so replay fixtures recorded without event data degrade rather than mis-score |
 
-Per event both engines clamp with `min(cap, max(0, floor(value)))`, award `+5` harmony when the focused bar advanced, `-5` harmony and `-5` Qi Pool when the other one did, and flip focus when the focused bar's `getBonusAndChance(...).guaranteed` improved across that event. Like the runtime's own hook, the fold ignores the event's `bar` label and derives focused/stray by diffing both clamped bars.
+Per event both engines clamp with `min(cap, max(0, floor(value)))`, award `+5` harmony when the focused bar advanced, **−15 harmony / −15 Qi Pool** when the other one did (−5/−5 only in 0.7.6), and flip focus when the focused bar's `getBonusAndChance(...).guaranteed` improved across that event. Like the runtime's own hook, the fold ignores the event's `bar` label and derives focused/stray by diffing both clamped bars.
 
 ### Known, deliberately unmodelled second-order effects
 
@@ -108,7 +130,7 @@ These are the semantics that changed with the 0.7.5 harmony rework and still hol
 | Behaviour | CraftBuddy |
 | --- | --- |
 | Harmony type is **chosen by the player** and is no longer derived from the item type | `src/modContent/craftingContext.ts` reads the selection from live craft state; `recipe.harmonyTypeOverride` remains the forced case. There is **no** item-kind inference anywhere, and the removed `modAPI.gameData.itemTypeToHarmonyType` utility is not referenced. |
-| **Seven** harmony types | `src/optimizer/harmonyRegistry.ts` defines all seven; `src/optimizer/harmony.ts` simulates each subsystem. |
+| **Seven** harmony types at the 0.7.5 rework | Now nine: Captivating Cadence and Returning Cycle were added later; `harmonyRegistry.ts` and `harmony.ts` cover all nine. |
 | Each harmony carries a **complexity multiplier** on sublime recipe targets | `applyComplexityMultiplier` applies `round(stat * cm)` wherever effective targets are derived, guarded against a non-positive multiplier. |
 | Outcome tiers are decided **conjunctively** from completion _and_ perfection band counts | `src/optimizer/outcome.ts` is the single authority (`deriveOutcomeBands`, `classifyOutcome`, `TIER_REQUIREMENTS`, `willAutoFinish`); search, the Rust engine, and the panel all consume it. |
 | There is **no manual finish action**; the craft resolves itself | `willAutoFinish` is the terminal predicate. `Wait` is a real technique costing 10 stability, not a finish button. |
@@ -126,6 +148,8 @@ Harmony registry values, verified against the installed bundle:
 | Formless Way | 1.5 | 33 | pins the harmony value every action instead of accumulating deltas |
 | Enhancing Echo | 1.3 | 0 | only harmony that scales live Qi/stability action costs |
 | Eccentric Decree | 1.0 | 0 | scores per bar application since 0.7.6; `+5` focused, `-15` harmony and `-15` Qi Pool for straying since 0.7.8 |
+| Captivating Cadence | 1.5 | 0 | varied-type chains; repetition breaks the chain and costs 50 harmony / 1 max stability |
+| Returning Cycle | 1.3 | 0 | fixed-size paid-Qi charges; drain before stabilize release; ordinary Returned Precision |
 
 The multiplier only applies to **sublime** recipes, matching the runtime's `initCrafting` guard.
 
@@ -144,7 +168,7 @@ Transition and formula layer (`src/optimizer/skills.ts`, `gameTypes.ts`, `state.
 - `discordantConditions` (0.7.7+): the stay-neutral gate applied at the generated-condition distribution, in search, the forecast queue, and the live `getNextCondition` fallback
 - dynamic max-pool buff evaluation for `% maxpool` restores with qi-cap clamping
 - active-buff definition hydration from skill payloads when a runtime snapshot omits definitions
-- Qi/stability cost order: percentage buffs floor after each application, then condition multipliers, then the flat `poolCostFlat` surcharge
+- Qi/stability costs: independent reduction/penalty channels, mastery-before-payment recomputation, condition/flat/harmony ordering and explicit droplet payment (0.7.17 table above)
 - Turbid Qi step surcharge: first stack at step `100`, then every `3` steps, granted _after_ the step bump so it taxes later actions
 - toxicity effects with the runtime's sign convention, per-turn detox, and the native `getMaxToxicity` ceiling for alchemy
 - `noQiCost` techniques, `craftingTeamUpOverride` companion buffs, cooldowns, max-stability decay and `preventsMaxStabilityDecay`
@@ -196,7 +220,7 @@ Each was verified against the installed bundle before the fix and has a regressi
 
 The Rust engine models the **same searchable action space** as TypeScript: generic active buffs, effect-tree techniques, mastery, Soulflame triggers and stack consumption, toxicity effects, and pill/reagent actions. Item actions are no longer filtered out of the bridge payload.
 
-Both engines share the conjunctive outcome model (`outcome.ts` / `crates/craftbuddy-engine/src/outcome.rs`) and agree on all 1,471 corpus transitions.
+Both engines share the conjunctive outcome model (`outcome.ts` / `crates/craftbuddy-engine/src/outcome.rs`) and agree on all 1,352 legal corpus transitions; the same 202 illegal-action cases are rejected on both sides.
 
 What is still asymmetric, deliberately:
 
@@ -222,6 +246,7 @@ Stated plainly rather than tracked as pending work:
 4. **Absolute Rust scores are not TypeScript scores** (see above).
 5. **Wall-clock search depth is machine-dependent.** Presets are a budget envelope, not a determinism guarantee; the _recommendation_ is deterministic for a fixed budget, and that is now directly tested on the Rust side.
 6. **Eccentric Decree bar events are expected values, not the runtime's discrete applications**, and a mid-technique focus flip does not retune that same turn's remaining effect magnitudes. Both are spelled out above and hold in both engines.
+7. **Future chance-buff state is not probability-aware.** Current payment branches account for independent chance-conditioned payment effects, not a new probabilistic persistent-buff/search model.
 
 ## Non-goals
 

@@ -37,6 +37,22 @@ import type {
   TechniqueType,
 } from '../../optimizer/gameTypes';
 import { HARMONY_TYPES } from '../../optimizer/harmonyRegistry';
+import { retargetScenarios } from './runtime0717';
+import { returningCycleScenarios } from './returningCycle';
+
+// Freeze the v4 seeded pool: adding a registry entry must not remap existing
+// random inputs. All registry entries still get the two exhaustive harmony
+// matrices below; Returning Cycle also has dedicated edge-case scenarios.
+const SEEDED_HARMONY_TYPES: readonly HarmonyType[] = [
+  'forge',
+  'alchemical',
+  'inscription',
+  'resonance',
+  'formless',
+  'enhancingEcho',
+  'eccentricDecree',
+  'captivatingCadence',
+];
 
 /** Buff stacks after a transition, in the engine's iteration order. */
 export interface DifferentialBuffState {
@@ -83,10 +99,18 @@ export interface DifferentialHarmonyDigest {
   cadenceLastAction: string | null;
   cadenceChain: number | null;
   cadenceLastOutcome: string | null;
+  cycleCharges?: number;
+  cycleStoredQi?: number;
+  cycleChargeSize?: number;
+  cyclePulseKey?: number;
+  cycleLastOutcome?: string;
 }
 
 /** Fields both engines must agree on after a single transition. */
 export interface DifferentialExpectation {
+  itemEffectiveness: number;
+  qiDroplets: number;
+  maxQiDroplets: number;
   qi: number;
   stability: number;
   stabilityPenalty: number;
@@ -241,6 +265,15 @@ function harmonyDataFor(harmonyType: HarmonyType): HarmonyData {
         chain: 2,
         lastOutcome: 'build',
         pulseKey: 2,
+      };
+      break;
+    case 'returningCycle':
+      data.returningCycle = {
+        charges: 2,
+        storedQi: 5,
+        chargeSize: 19.4,
+        pulseKey: 1,
+        lastOutcome: 'charge',
       };
       break;
     case 'formless':
@@ -805,6 +838,15 @@ function digestHarmonyData(
     cadenceLastAction: data?.captivatingCadence?.lastAction ?? null,
     cadenceChain: data?.captivatingCadence?.chain ?? null,
     cadenceLastOutcome: data?.captivatingCadence?.lastOutcome ?? null,
+    ...(data?.returningCycle
+      ? {
+          cycleCharges: data.returningCycle.charges,
+          cycleStoredQi: data.returningCycle.storedQi,
+          cycleChargeSize: data.returningCycle.chargeSize,
+          cyclePulseKey: data.returningCycle.pulseKey,
+          cycleLastOutcome: data.returningCycle.lastOutcome,
+        }
+      : {}),
   };
 }
 
@@ -826,12 +868,16 @@ function buildScenario(spec: ScenarioSpec): DifferentialScenario {
       conditionEffects,
       spec.targetCompletion,
       spec.condition,
+      spec.targetPerfection,
     );
     return {
       skillIndex,
       skillKey: entry.key,
       expected: next
         ? {
+            itemEffectiveness: next.itemEffectiveness,
+            qiDroplets: next.qiDroplets,
+            maxQiDroplets: next.maxQiDroplets,
             qi: next.qi,
             stability: next.stability,
             stabilityPenalty: next.stabilityPenalty,
@@ -877,6 +923,9 @@ function buildScenario(spec: ScenarioSpec): DifferentialScenario {
     cases,
   };
 }
+
+// Reuse the exact transition/digest path for fresh, scratch-only parity probes.
+export { buildScenario as buildDifferentialScenario };
 
 function handWrittenScenarios(): ScenarioSpec[] {
   const skills = baseSkillSet();
@@ -1605,9 +1654,7 @@ function effectMechanicScenarios(): ScenarioSpec[] {
       scalesWithIntensity: false,
       baseCompletionGain: 0,
       basePerfectionGain: 0,
-      effects: [
-        { kind: 'perfection', amount: { value: 3, stat: 'control' } },
-      ],
+      effects: [{ kind: 'perfection', amount: { value: 3, stat: 'control' } }],
     }),
   ];
 
@@ -1701,7 +1748,7 @@ function randomEffectScenarios(count: number): ScenarioSpec[] {
     const initialMaxStability = rng.int(40, 80);
     const stabilityPenalty = rng.int(0, 12);
     const isSublime = rng.next() < 0.5;
-    const harmonyType = isSublime ? rng.pick(HARMONY_TYPES) : undefined;
+    const harmonyType = isSublime ? rng.pick(SEEDED_HARMONY_TYPES) : undefined;
 
     const buffEntries: Array<[string, string, number]> = [];
     for (const [key, definitionKey] of buffPool) {
@@ -1783,7 +1830,7 @@ function randomScenarios(count: number): ScenarioSpec[] {
     const initialMaxStability = rng.int(40, 80);
     const stabilityPenalty = rng.int(0, 15);
     const isSublime = rng.next() < 0.4;
-    const harmonyType = isSublime ? rng.pick(HARMONY_TYPES) : undefined;
+    const harmonyType = isSublime ? rng.pick(SEEDED_HARMONY_TYPES) : undefined;
     specs.push({
       name: `random-${index}`,
       state: new CraftingState({
@@ -1835,6 +1882,16 @@ export function buildDifferentialCorpus(): DifferentialCorpus {
     ...randomScenarios(48),
     ...effectMechanicScenarios(),
     ...randomEffectScenarios(40),
+    ...[...retargetScenarios(), ...returningCycleScenarios()].map(
+      ({ name, state, config }): ScenarioSpec => ({
+        name,
+        state,
+        config,
+        targetCompletion: 100,
+        targetPerfection: 100,
+        condition: 'neutral',
+      }),
+    ),
   ];
   return {
     version: DIFFERENTIAL_CORPUS_VERSION,

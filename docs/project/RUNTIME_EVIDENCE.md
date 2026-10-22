@@ -3,9 +3,9 @@ title: Runtime Evidence
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.10-9bf9078
-last_verified: 2026-09-01
-source_of_truth: installed AFNM 0.7.10 runtime bundle (scripts/installed-game-runtime.js)
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
+source_of_truth: installed AFNM 0.7.17 runtime bundle (scripts/installed-game-runtime.js); earlier sections identify their historical builds
 review_cycle_days: 90
 related_files:
   - docs/project/MECHANICS_PARITY.md
@@ -25,8 +25,9 @@ related_files:
 
 # Runtime Evidence
 
-Verbatim findings extracted from the **installed** AFNM runtime, currently
-**0.7.10-9bf9078**. The runtime is the sole authority here: where a tooltip, a
+Findings extracted from the **installed** AFNM runtime, most recently
+**0.7.17-d8ae6ce** (section 17). Earlier sections retain their historical build
+citations. The runtime is the sole authority here: where a tooltip, a
 patch note, or an earlier CraftBuddy note disagrees with the code below, the code
 below wins.
 
@@ -1096,5 +1097,331 @@ then come from `getBonusAndChance(completion).guaranteed - 1` either way.
   `internalState`/`triggeredEffects`, `sealedMaxStability`, and
   `discordantConditions` are unchanged.
 - `hasItemTypeToHarmonyType` remains `false` in the runtime oracle.
+
+## 17. AFNM 0.7.17 retarget audit (CraftBuddy 6.7.0; phase 1 only)
+
+Verified 2026-10-22 against **0.7.17-d8ae6ce**, compared where noted with
+**0.7.12-ad43f78**. These findings describe the game and statically inspected
+CraftBuddy gaps; they do **not** claim that CraftBuddy has been retargeted or
+that a live UI test passed. No implementation, dependency, build, or release
+changes were authorized in this phase.
+
+**Implementation follow-up (6.8.0):** the gaps described below were the
+pre-retarget 6.7.0 implementation, not outstanding work. Phase 2 implemented
+the cost/droplet/mastery/trigger/scaling and buff-name timing corrections in
+both engines, then Returning Cycle, hydration/replay and the native bridge.
+The regenerated v4 corpus has 177 scenarios / 1,554 cases (1,352 legal
+transitions, 202 illegal-action checks). `MECHANICS_PARITY.md` records the
+current model and its deliberate approximations; `ENGINE_PERFORMANCE.md`
+records the measured ~0.58 vs pre-retarget HEAD ~0.41 ms/node phase/cost
+overhead and the approved 6,000-node heat-one benchmark contract. The
+resonance safety prohibition remains; only its non-recommended runner-up
+ordering clause was removed after the new-name tick rule below explained
+the inversion and restoring old ticking reproduced HEAD scores. No scoring
+constants changed. This follow-up is simulator/build evidence, not a live
+game UI smoke-test claim.
+
+The review follow-up preserves the complete worker state (including droplets,
+independent cost channels, Returning Cycle and native variables), supplies live
+additive item effectiveness, gates compatibility flooring on an actual legacy
+stat, and advances Rust's running bars during recursive trigger dispatch.
+Five new scenarios cover fractional costs, combined Jade+Bifang and Calming Mind
+at three effectiveness values; none of the existing 172 scenarios changes its
+recorded outcome, excluding the added item-effectiveness scalar checks.
+
+### 17.1 Provenance and reproducible evidence coordinates
+
+The repository's `runtime:oracle` and `runtime:extract` commands both succeeded.
+To respect this audit's scratch-only extraction requirement, they were run with
+`NODE_OPTIONS="--require=$HOME/.local/tmp/afnm/craftbuddy/runtime-cache.cjs"`.
+That scratch preload redirects only the extractor's cache path. The installed
+game resolves to `$HOME/.local/share/Steam/steamapps/common/Ascend From Nine Mountains`.
+
+Current extract: `$HOME/.local/tmp/afnm/craftbuddy/runtime/2904927473-1792546170769`.
+`G:L` references below mean line L of
+`$HOME/.local/tmp/afnm/craftbuddy/Game.pretty.js`, a Prettier navigation copy of
+that extract's `dist-electron/Game.js`. Formulas below are explanations, not
+verbatim minified snippets. Useful zero-based **byte** anchors in the original
+current `Game.js` are:
+
+| Subject | Byte anchor | Search text |
+| --- | ---: | --- |
+| Cost multiplier | 8298295 | `pmo=(e=0,t=0)` |
+| Returning Cycle | 8317926 | ``Iho=`returningCycle.webp` `` |
+| Condition generator | 14126658 | `RLc=(e,t)=>` |
+| Native auto-use callback | 16607457 | `currentCraftingAutoUseLoadout?.slots` |
+| New droplet action | 7974156 | ``name:`Stablizing Circuit` `` |
+| Converging Jade | 6609169 | ``name:`Converging Jade Cauldron (${e})` `` |
+| Room scaling | 5334839 | `e.scalesWithRoomEffectiveness` |
+| Extra state keys | 14114991 | `for(let t of l.keys)` |
+| Preview mastery filtering | 14261196 | ``n.condition?.kind===`chance` `` |
+| Separate replicated-pill results | 16770756 | `replicatedPills:l` |
+
+Baseline extract: `tmp/installed-game-runtime/2204327147-1789294012392` in this
+repository. Its `package.json` identifies 0.7.12-ad43f78. Baseline byte references
+below distinguish `dist-electron/Game.js` from
+`dist-electron/_rolldown_dynamic_import_helper.js` (called **old helper**).
+
+### 17.2 Cost replacement is a mechanics migration, not a rename
+
+`qiCostReduction`, `qiCostPenalty`, `stabilityCostReduction`, and
+`stabilityCostPenalty` replace the two old percentage stats; neutral is zero.
+Reduction contributions combine as
+`100 - (100 - min(100, a)) * (100 - min(100, b)) / 100`.
+Penalty contributions combine as `(100 + a) * (100 + b) / 100 - 100`.
+Each combination is rounded to 10 decimal places. A positive penalty increases
+cost; it is not a negative-valued reduction. Condition multipliers below one
+enter the reduction channel; those above one enter the penalty channel.
+Evidence: G:144990-144993,317975-317982,318218-318286.
+
+Let `M = max(0, 100 - reduction) * max(0, 100 + penalty) / 10000` and
+`F(x) = floor(round(max(0, x) * 1e10) / 1e10)`.
+Qi cost is `floor(F(max(0, basePoolCost + poolCostFlat) * M) * harmonyQiMultiplier)`;
+`noQiCost` bypasses it entirely. Positive base stability cost uses
+`floor(F(baseStabilityCost * M) * harmonyStabilityMultiplier)`; otherwise it is
+zero. Keep the inner rounding and outer harmony floor separate. Evidence:
+G:321632-321657. Current TS and Rust instead normalize the old stats around 100
+and use the old negative stability-delta path:
+`src/optimizer/skills.ts:1810-1919`,
+`crates/craftbuddy-engine/src/effects.rs:2269-2355`.
+
+Review regression: a 15.5% base reduction combined with a 10% reduction buff
+gives 23.95% reduction, so base cost 200 pays **152**, not 151. The modern
+channels must not pass through the floored legacy percentage view; a legacy
+adjustment applies only to the side with a legacy-stat contribution.
+
+### 17.3 Action execution, mastery timing, and native auto-use
+
+The current UI checks legality using the pre-action derived costs and resources,
+including droplets (G:692996-693025,693229-693262). Its click callback applies
+native auto-use first, then dispatches the technique
+(G:693113-693159). The same callback ordering and loadout/toxicity/training inputs
+exist in baseline `Game.js`, byte 1413302. The current slot selector retains the
+step-zero reagent priority, inventory and per-craft limits, condition and existing
+effect checks, toxicity budget, and enabled switch (G:692895-692949).
+**No new auto-use mechanism is needed.** Preserve the existing guard that only
+direct-dispatches techniques when native auto-use is inactive:
+`src/modContent/autoCraftExecutor.ts:719-745`.
+
+The reducer snapshots existing buff **names**, executes the action, then passes
+the returned `{ poolCost, stabilityCost, succeeded }` to end-of-turn processing
+(G:541130-541146). Action order is toxicity, droplets, buff cost, success-chance
+capture, mastery effects, recomputed Qi/stability costs and payment, success roll,
+then successful technique effects (G:540478-540651). Mastery effect buffs can
+therefore affect the **current** payment. Failed actions still pay and still reach
+end-of-turn harmony processing. Static cost/success masteries remain baked into
+the technique at construction (G:343620-343655); do not apply them twice.
+
+At turn end: cooldown update; type-specific and ordinary effects of buff names
+in the pre-action snapshot; harmony `processEffect` with the resolution; condition
+advance; stability decay and caps; bar/resource flooring and caps; Completion
+Bonus replacement and harmony clamp (G:540284-540308,540929-541022).
+New buff names created by mastery/technique effects do not receive an immediate
+ordinary buff tick. Do not flatten mastery effects into ordinary technique
+effects as the current extractor does:
+`src/modContent/craftStateExtraction.ts:249-267,675-722`;
+the current TS cost deduction precedes those effects
+(`src/optimizer/skills.ts:3519-3530`). Mirror the corrected phases in Rust.
+
+### 17.4 Chance masteries and the game preview are different contracts
+
+Examples in the current mastery generators: deterministic control/intensity is
+`2 * (tierIndex + 1)` percent versus a 10% chance of
+`30 * (tierIndex + 1)` percent; deterministic bar effects use 0.02 versus a 10%
+chance of 0.3 times the scaling stat. These chance examples have 1.5 times the
+deterministic expected amount (G:342418-342538). Read the actual runtime payload;
+do not multiply already-strengthened extracted effects by 1.5 again.
+
+The game preview strips mastery entries whose own condition is `chance`, and
+strips chance-conditioned nested effects from effect masteries, before simulation
+(G:547788-547818). This is preview-only: actual execution still rolls them.
+Optimizer expected-value simulation must not discard them merely to imitate the
+game's displayed preview. Mastery pool selection is effect-kind based, and the
+new declarations include `modifyBuffGroup`; dependency/type retargeting must
+retain those runtime entries rather than a stale exhaustive kind map
+(G:343582-343591; supplied `diff_crafting_0712_0717.txt:219-229`).
+
+### 17.5 Returning Cycle: complete transition contract
+
+The ninth registered harmony is `returningCycle`, with complexity multiplier
+**1.3**, no starting-harmony override, and empty recommendations. Initialization
+creates `{ charges: 0, storedQi: 0, chargeSize: max(1, entity.stats.maxpool * 0.1) }`
+and removes Returned Precision. The charge size uses the raw starting
+`stats.maxpool`, not each turn's computed maximum or current pool. Absent or
+non-finite cycle data, or non-positive charge size, is reinitialized from that
+same expression (G:318992-319018,319079-319082,319232-319275).
+
+For **every** harmony resolution, including a failed action:
+
+1. Increment `pulseKey`; clear recommended technique types.
+2. Add `max(0, actionResolution?.poolCost ?? 0)` to `storedQi`.
+3. Create `floor((storedQi + chargeSize * 1e-9) / chargeSize)` charges; subtract
+   their charge-size units, clamping the remainder at zero. Charges are uncapped.
+   `lastOutcome` is `charge` if any were created, otherwise `drain`.
+4. With the resulting total charges C, subtract `3 * C` harmony and
+   `C * chargeSize * (0.03 / 0.1)` Qi, clamping pool at zero. This direct drain
+   does not run through the ordinary pool applier/`poolSpent` trigger and does
+   **not** charge the next cycle. Restores do not erase recorded spending.
+5. If the technique **type** is `stabilize`, clear all charges and set
+   `lastOutcome = release`, then add `10 * C` harmony and `5 * C` Returned
+   Precision stacks. Drain happens **before** release, including newly earned
+   charges. The partial `storedQi` remainder survives.
+
+Evidence: G:319039-319078. The harmony reads the reported computed `poolCost`,
+not a net pool delta; it does not inspect `succeeded` or `stabilityCost`.
+No resolution means no new spending credit, not a skipped drain/release.
+
+Returned Precision is a stackable ordinary buff: `critchance` contribution is
+`1 * stacks`, and its ordinary effect subtracts one stack each action. Existing
+stacks tick before harmony resolution; cash-out stacks are added afterward, so
+they do not immediately decay or improve the cash-out action itself. Harmony is
+finally clamped to [-100, 100], and pool is floored/capped by normal turn cleanup
+(G:319019-319037,540937-540963,540988-540991,541017-541019).
+Search should value charges/Precision through simulated future outcomes, not a
+new flat harmony reward or a hardcoded Stabilize recommendation.
+
+### 17.6 Buff/scaling additions and the two named buff fixes
+
+`isItem` multiplies by `1 + itemEffectiveness / 100` (G:183689); the live stat is
+additive and neutral is **0** (G:318300-318328). Calming Mind Pill specifies
+`stacks: { value: 4, isItem: true }`, a 15-point stability-cost-reduction buff,
+and ordinary -1 stack decay (G:275603). Therefore it creates 4 stacks at neutral,
+6 at +50 effectiveness and 2 at -50; seed the live stat in both engines rather
+than a percentage baseline of 100.
+
+Buff stat scopes merge base variables, `additionalVariables`, `internalState`,
+then current stacks (G:318247-318265). Buff effect execution resets room
+effectiveness to zero before merging per-instance variables/state
+(G:540145-540157). Scaling now supports room-effectiveness opt-in, a nested
+`multiplier` (including stepped thresholds and optional increasing step costs),
+and final `roundToInteger`. The multiplier is applied after the normal initial
+rounding and before `max`/stance operations/final integer rounding
+(G:183677-183746). These fields are absent from CraftBuddy's local Scaling and
+BuffDefinition contracts (`src/optimizer/gameTypes.ts:51-74,180-220`); preserve
+them through extraction and mirror evaluation in Rust.
+
+`setState.keys` sets extra keys in addition to the primary key. The new
+Stablizing Circuit uses **set-mode** to reset four action-type flags together
+(G:306623-306649). Its runtime implementation also has observable quirks:
+add-mode extra keys derive from the already-updated primary key, and the
+immediate variable-copy loop uses array indexes rather than key values
+(G:540245-540275). Do not silently replace those semantics with an idealized
+implementation; the inspected Circuit path uses set-mode, not that add branch.
+The local TS effect contract currently exposes only `key`
+(`src/optimizer/gameTypes.ts:127-141`).
+
+Converging Jade now declares a source-independent `perfectionGained` trigger,
+whose completion effect has `value: 30`, `eqn: amount / 100`; it still negates on
+Fusion (G:249124-249145). Triggered blocks run through the **general buff effect
+executor**, with a trigger/buff re-entry guard (G:540797-540840), so this completion
+effect receives normal completion-applier behavior, not a special raw-bar add.
+CraftBuddy currently permits only `setState` in triggered blocks; this silently
+omits the new completion effect in TS and Rust
+(`src/optimizer/skills.ts:3840-3845`;
+`crates/craftbuddy-engine/src/effects.rs:1815-1818,1871-1875`).
+
+Fusion Invasion and Refinement Invasion both now declare `canStack: true` and
+lose one stack per ordinary action (G:305799-305813,305855-305869). The displayed
+stat definitions do not scale with stacks: do not turn a stacking duration into
+an invented per-stack intensity/control penalty. Preserve runtime definitions
+and the normal can-stack path rather than adding name-specific overrides.
+
+### 17.7 Scoped condition/outcome comparison and new droplet action
+
+**Conditions did not change between the inspected builds.** Baseline old helper
+byte 11365674 (`zas`) matches G:540879-540927 (`RLc`), including entity-based
+discordance, constants 0.25/0.18 (old helper byte 11365410), extremes, and queued
+neutral handling. `getNextCondition(progress, entity?)` is not a new migration
+requirement. A pre-existing model discrepancy was noticed, not expanded here:
+the runtime handles nonzero discordance before queue-based branches, whereas
+`src/optimizer/search.ts:906-949` applies a different late neutral gate. This is
+not a newly introduced 0.7.17 condition rule.
+
+**Outcome gates/termination are unchanged.** Baseline old helper byte 5797785
+matches G:318413-318419: end on stability <= 0 or both maximum flats. Baseline
+`Game.js` byte 1501044 matches G:700753-700760: failure at zero completion bands;
+sublime needs both band counts > 1 and a sublime craft; otherwise any perfection
+band yields perfect. Material refund is still capped at 80%
+(G:703034-703053). Keep `src/optimizer/outcome.ts` as the authority; no new tier,
+manual Finish action, or scoring retune follows from this update.
+
+**Pill replication changed, but not outcome tiers.** Baseline `Game.js` byte
+1534172 walks consumed pill types in insertion order; current G:688466-688488
+randomly samples individual consumed units **without replacement**, capped by
+`floor(pillReplication)` and consumed count, then regroups by item. Results now
+carry `replicatedPills` separately on failed/basic/perfect/sublime results
+(G:703055-703148), instead of mixing them into material refunds. Current
+CraftBuddy optimizer/modContent contain no pill-replication result processing;
+no new mid-craft resource or band-scoring rule is required. Any future result
+inspection must use the new field rather than `refund`.
+
+**Droplets now matter to the action space.** The new technique's internal name
+is misspelled `Stablizing Circuit`; it costs 3 droplets, has zero base Qi/stability
+cost, a 9999999 cooldown, and creates the four-type tracking buff
+(G:306606-306649). Neither spelling appears in either inspected 0.7.12 bundle.
+Current legality checks droplets (G:693004), and execution deducts them before
+masteries/costs (G:540489-540500), so failed execution still spends them. The
+runtime variable builder exports `qiDroplets` and `maxqiDroplets`
+(G:318311-318312). Neither droplet field nor `dropletCost` is modeled anywhere in
+current `src/optimizer` or `src/modContent`; add extraction, state, legality,
+transition, and Rust/bridge support rather than recommending an unpayable action.
+Keep the internal spelling unchanged and user-facing names on
+`techniqueDisplayName()`.
+
+### 17.8 Harmony hydration and Rust/WASM bridge
+
+TS currently stops at eight harmony names
+(`src/optimizer/gameTypes.ts:38-45`). The live-data clone explicitly copies
+Captivating Cadence but has no Returning Cycle field, so it would discard the
+new state (`src/modContent/harmonyState.ts:30-76`). Add the cycle's authoritative
+charge size, charges, remainder, and presentation metadata to hydration and pure
+state cloning/serialization; do not reconstruct an in-progress cycle from
+current pool.
+
+There is **no Rust harmony enum to extend**: dispatch uses `&str`
+(`crates/craftbuddy-engine/src/lib.rs:1803-1825`). Captivating Cadence already has
+a Rust state field, processing branch, and TS bridge conversion
+(`lib.rs:345,1817,1985-2027`;
+`src/optimizer/nativeMcts.ts:212,233-238,495-500`). Returning Cycle needs a new
+serde payload and string dispatch branch, action-resolution context, correctly
+timed Precision buff mutation, and matching bridge conversion. It currently
+falls through the zero-effect default if presented as a string. Cost and droplet
+fields also have to cross the same TS/Rust boundary. Rebuild WASM after those
+source changes; a type-only upgrade cannot enable the mechanic. Preserve the
+existing per-bar Eccentric Decree fold and contribution gates in both engines.
+
+### 17.9 DOM/controller compatibility: static selector audit only
+
+CraftBuddy does not currently call `injectUI`; it mounts its own overlay and
+uses generic controls plus class/text fallbacks
+(`src/modContent/overlayMount.ts:213-252,289-309,319-322`;
+`src/modContent/autoCraftExecutor.ts:38-47`;
+`src/modContent/index.ts:2677-2703`). No game-specific injectUI selector requires
+migration. Literal lowercase progress class names are not established by this
+inspection; the surviving English `Completion:`, `Perfection:`, and `Stability:`
+labels support the existing fallback searches (G:701795,701825,701919).
+
+The current crafting action component retains a `button` role, translated
+`displayName ?? name` aria-label, tab index, and click callback; controller support
+adds data attributes, not a replacement input path
+(G:621915-621927,622522-622530). These match the executor's `[role="button"]`
+and aria-label searches; keeping `techniqueDisplayName()` remains necessary.
+**No mandatory selector rewrite was found by this grep-level audit.** Actual
+visibility/layout, localization, controller focus, and click-sequence behavior
+remain untested; check them in phase 2 rather than treating bundle presence as a
+live UI pass.
+
+### 17.10 Phase-1 check results and scope limits
+
+The runtime oracle and extraction passed. After this evidence update, the
+inventory generator ran with its output redirected to audit scratch, preserving
+the one-repository-file write limit. Documentation link and authority checks
+passed. The combined `docs:check` failed at freshness: 16 **untouched** documents
+exceeded their review periods; for example, `docs/DOC_INVENTORY.md:6-8` records
+2026-09-13 with a 30-day cycle, and `docs/project/ARCHITECTURE.md:7-9` records
+2026-08-23 with a 30-day cycle. Those dates were not changed merely to make the
+check pass. Source tests, WASM/build/corpus generation, benchmarks, and live UI
+checks were not run in this read-only implementation audit. Only this evidence
+document was changed in the repository; no phase-2 work or commit was started.
 
 <!-- prettier-ignore-end -->

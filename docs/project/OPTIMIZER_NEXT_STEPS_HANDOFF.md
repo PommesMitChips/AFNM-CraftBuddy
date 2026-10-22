@@ -3,8 +3,8 @@ title: Optimizer Next Steps Handoff
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.10-9bf9078
-last_verified: 2026-09-01
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
 source_of_truth: src/optimizer/*, crates/craftbuddy-engine/*, src/__tests__/*, scripts/optimizer/benchmark-engines.ts
 review_cycle_days: 30
 related_files:
@@ -16,7 +16,7 @@ related_files:
 
 # Optimizer Next Steps Handoff
 
-Baseline for the next agent working on recommendation accuracy or speed, current target AFNM **0.7.10**. It records what the 0.7.5 rework settled, so no one re-derives it, and what is genuinely still open.
+Baseline for the next agent working on recommendation accuracy or speed, current target AFNM **0.7.17** / CraftBuddy **6.8.0**. It records what is settled and what is genuinely still open. Current mechanics and phase/cost throughput are in `MECHANICS_PARITY.md` and `ENGINE_PERFORMANCE.md`; historical optimization measurements below are not fresh 0.7.17 speed claims.
 
 ## Start here
 
@@ -30,7 +30,7 @@ Baseline for the next agent working on recommendation accuracy or speed, current
 | --- | --- |
 | Outcome tiers are conjunctive; `outcome.ts` owns every threshold | The additive weighted scorer is what mis-played sublime crafts. Re-introducing a weight that can raise a tier is a regression, not a tuning choice. |
 | There is no manual finish action | Runtime-verified in 0.7.5 and again in 0.7.6. `Wait` is a normal technique costing 10 stability. |
-| Harmony is player-selected, seven types, each with a complexity multiplier | Runtime-verified; item-kind inference no longer exists in the game. |
+| Harmony is player-selected, now nine types, each with a complexity multiplier | Runtime-verified; includes Captivating Cadence and Returning Cycle; no item-kind inference. |
 | Rust models the same action space, but TypeScript owns final ranking | Parity is proven by the corpus; split authority over ranking is not worth the divergence risk. |
 | Compact Rust state with mutate/undo | Measured: clone is 4.70% of a transition, so the ceiling was under 5%. Rejected. |
 | Packed numeric transposition key | Measured at 1.0-1.4% of the budget. Dropped. |
@@ -45,7 +45,7 @@ Baseline for the next agent working on recommendation accuracy or speed, current
 3. **Native cost-preview helpers.** Still internally modelled; see `docs/dev-requests/STATUS.md` Q3.
 4. **Eccentric Decree per-bar-change fidelity.** 0.7.6 scores it per bar application; CraftBuddy folds expected values instead of discrete applications, and a mid-technique focus flip does not retune that same turn's remaining effect magnitudes. Both limits are stated in `docs/project/MECHANICS_PARITY.md`. Closing either needs real snapshots first.
 
-`user-report-resonance-regression` used to head this list. It is closed: the cause was the success-weighted-progress bug in the table above, not the contract and not resonance. Its `mustRankBefore` clause is still a depth-sensitive near-tie that can fail on the deepest config depending on the depth a machine reaches — read `docs/project/OPTIMIZER_ENGINE_FINDINGS.md` before treating that as a regression, and do not tune a constant for it.
+`user-report-resonance-regression` is closed: the original defect was the success-weighted-progress bug above. In 6.8.0 the runtime-correct pre-action-name tick rule changed runner-up scores; its depth-sensitive `mustRankBefore` clause was removed with evidence, while `mustNotRecommend: ['explosive_fusion']` remains. Heat-one keeps all assertions with an approved 6,000-node fixture budget. Do not tune constants for either; see `ENGINE_PERFORMANCE.md`.
 
 ## Where new fixtures come from
 
@@ -61,6 +61,7 @@ Store curated exports in `src/__tests__/__fixtures__/replay-snapshots/`, add a f
 - alchemical charge sequences and inscription partial blocks
 - low-stability crafts with a proc-dependent recovery temptation
 - states where auto-finish is one action away
+- real Returning Cycle and Captivating Cadence crafts (explicit synthetic transition coverage is not a substitute for player replays)
 
 ## Working rules
 

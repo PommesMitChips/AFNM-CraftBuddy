@@ -74,6 +74,8 @@ interface FixtureContract {
     toleranceRatio?: number;
   }>;
   minDepthReached?: number;
+  /** Explicit work-bound fixture override; preset beam/MCTS settings remain. */
+  searchBudget?: { maxNodes: number; timeBudgetMs: number };
   notes: string;
 }
 
@@ -232,29 +234,21 @@ const FIXTURE_CONTRACTS: FixtureContract[] = [
   {
     fixture: 'user-report-resonance-regression',
     mustNotRecommend: ['explosive_fusion'],
-    mustRankBefore: [
-      {
-        before: 'focused_refine',
-        after: 'explosive_fusion',
-        // Runner-up ordering only, tolerated up to a 5% score gap. See
-        // docs/project/RUNTIME_EVIDENCE.md for the measurements: this
-        // fixture carries no harmonyData at all, so nothing about it is
-        // resonance-specific, and the inversion tracks the search depth the
-        // wall-clock budget completes (passes at depth 4, inverts at depth 5,
-        // reverts from depth 6 up) rather than any game mechanic. The real
-        // defect users reported - explosive_fusion being *recommended* - is
-        // covered by mustNotRecommend above and by the deterministic
-        // fixed-node assertions in src/__tests__/search.test.ts.
-        toleranceRatio: 0.05,
-      },
-    ],
+    // Keep the actual safety contract, not an obsolete runner-up ordering.
+    // RUNTIME_EVIDENCE §17.3 (G:540937-540963,541143-541146): new buff names
+    // survive their creation turn. At fixed 2,877 nodes/depth 5 this changes
+    // the runner-up gap from HEAD's 3.03% to 6.37%; restoring old ticking in a
+    // scratch probe reproduces HEAD's scores. Both pass the old ordering at
+    // 12,000 nodes/depth 6, so no runner-up order is invariant across frontiers.
+    // The fixed-node Jest regressions retain the unreliable-burst safety check.
     notes:
-      'explosive_fusion must never be recommended. Runner-up ordering against focused_refine is depth-sensitive and only material beyond a 5% score gap.',
+      'explosive_fusion must never be recommended. AFNM 0.7.17 new-name buff survival changes depth-5 runner-up valuation (RUNTIME_EVIDENCE §17.3); runner-up ordering is intentionally unconstrained.',
   },
   {
     fixture: 'user-report-alchemical-sequence',
     preferredTypes: ['refine'],
-    notes: 'Alchemical next charge is refine; optimizer should not recommend off-combo types.',
+    notes:
+      'Alchemical next charge is refine; optimizer should not recommend off-combo types.',
   },
   {
     fixture: 'skyfall-bow-heat-regression',
@@ -271,6 +265,11 @@ const FIXTURE_CONTRACTS: FixtureContract[] = [
   },
   {
     fixture: 'forge-heat-runway-step-3',
+    // AFNM 0.7.17's phase/cost model costs ~0.58 ms/node vs HEAD's ~0.41.
+    // The 1s legacy_instant preset can stop at the contested depth-5 frontier.
+    // Bind this recovery contract to 6,000 nodes (depth 6), like its Jest guard,
+    // retaining every assertion rather than treating machine speed as safety.
+    searchBudget: { maxNodes: 6000, timeBudgetMs: 120000 },
     preferredTypes: ['fusion'],
     notes: 'Heat=1: do not walk forge heat to zero.',
   },
@@ -281,7 +280,8 @@ const FIXTURE_CONTRACTS: FixtureContract[] = [
   },
   {
     fixture: 'low-stability-regression',
-    notes: 'Post-stabilize: invasive refine should remain lower-ranked alternative.',
+    notes:
+      'Post-stabilize: invasive refine should remain lower-ranked alternative.',
   },
   {
     fixture: 'premature-finish-proc-floor',
@@ -307,7 +307,8 @@ const FIXTURE_CONTRACTS: FixtureContract[] = [
   },
   {
     fixture: 'user-report-pattern-step-1',
-    notes: 'Inscription pattern step 1: optimizer should not waste inscription blocks.',
+    notes:
+      'Inscription pattern step 1: optimizer should not waste inscription blocks.',
   },
   {
     fixture: 'user-report-pattern-step-2',
@@ -376,7 +377,11 @@ function evaluateContract(
   }
 
   if (contract.mustRankBefore && contract.mustRankBefore.length > 0) {
-    for (const { before, after, toleranceRatio = 0 } of contract.mustRankBefore) {
+    for (const {
+      before,
+      after,
+      toleranceRatio = 0,
+    } of contract.mustRankBefore) {
       const beforeIndex = result.rankedKeys.indexOf(before);
       const afterIndex = result.rankedKeys.indexOf(after);
       if (beforeIndex < 0 || afterIndex < 0) {
@@ -396,7 +401,8 @@ function evaluateContract(
       const beforeScore = result.rankedScores[beforeIndex] ?? 0;
       const afterScore = result.rankedScores[afterIndex] ?? 0;
       const reference = Math.max(Math.abs(beforeScore), Math.abs(afterScore));
-      const gapRatio = reference > 0 ? Math.abs(afterScore - beforeScore) / reference : 0;
+      const gapRatio =
+        reference > 0 ? Math.abs(afterScore - beforeScore) / reference : 0;
       const immaterial = !afterIsRecommendation && gapRatio <= toleranceRatio;
       if (immaterial) {
         continue;
@@ -532,6 +538,7 @@ function runBenchmark(options: {
       try {
         const searchConfig = {
           ...cfg.searchConfig,
+          ...contract?.searchBudget,
           goalPriorityBias:
             cfg.searchConfig.goalPriorityBias ??
             input.searchConfig.goalPriorityBias ??
@@ -562,7 +569,9 @@ function runBenchmark(options: {
         runResult = {
           fixture: fixtureName,
           config: cfg.id,
-          configLabel: cfg.label,
+          configLabel: contract?.searchBudget
+            ? `${cfg.label}; fixture budget: ${contract.searchBudget.maxNodes} nodes`
+            : cfg.label,
           lookaheadDepth: cfg.lookaheadDepth,
           recommendationKey: recommendation?.skill.key ?? null,
           recommendationName: recommendation?.skill.name ?? null,

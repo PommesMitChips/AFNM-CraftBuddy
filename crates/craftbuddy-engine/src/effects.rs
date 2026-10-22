@@ -131,6 +131,24 @@ pub struct CustomScaling {
 #[serde(rename_all = "camelCase")]
 pub struct Scaling {
     #[serde(default)]
+    pub multiplier: Option<Box<Scaling>>,
+    #[serde(default)]
+    pub scaling_max: Option<Box<Scaling>>,
+    #[serde(default)]
+    pub increment: Option<f64>,
+    #[serde(default)]
+    pub round_to_integer: bool,
+    #[serde(default)]
+    pub scales_with_room_effectiveness: bool,
+    #[serde(default)]
+    pub scales_with_charisma: bool,
+    #[serde(default)]
+    pub charisma_scaling_pivot: f64,
+    #[serde(default)]
+    pub is_item: bool,
+    #[serde(default)]
+    pub multiply_by_stance_length: bool,
+    #[serde(default)]
     pub value: f64,
     #[serde(default)]
     pub stat: Option<String>,
@@ -187,6 +205,8 @@ pub struct EffectCondition {
 #[serde(rename_all = "camelCase")]
 pub struct Effect {
     #[serde(default)]
+    pub keys: Option<Vec<String>>,
+    #[serde(default)]
     pub kind: String,
     #[serde(default)]
     pub amount: Option<Scaling>,
@@ -220,6 +240,8 @@ pub struct TriggeredEffectBlock {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuffDefinition {
+    #[serde(default)]
+    pub additional_variables: Option<BTreeMap<String, f64>>,
     #[serde(default)]
     pub name: String,
     #[serde(default)]
@@ -302,6 +324,8 @@ pub struct ItemStack {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MasteryEntry {
+    #[serde(default)]
+    pub effects: Option<Vec<Effect>>,
     #[serde(default)]
     pub kind: String,
     #[serde(default)]
@@ -965,6 +989,15 @@ pub fn evaluate_scaling(
     variables: &Variables,
     default_value: f64,
 ) -> f64 {
+    evaluate_scaling_inner(scaling, variables, default_value, false)
+}
+
+fn evaluate_scaling_inner(
+    scaling: Option<&Scaling>,
+    variables: &Variables,
+    default_value: f64,
+    ceil: bool,
+) -> f64 {
     let Some(scaling) = scaling else {
         return default_value;
     };
@@ -975,10 +1008,27 @@ pub fn evaluate_scaling(
         result *= get_variable_value(variables, stat);
     }
     if let Some(name) = &scaling.scaling {
-        result *= get_variable_value(variables, name);
+        let mut value = get_variable_value(variables, name);
+        if let Some(cap) = &scaling.scaling_max {
+            let cap = evaluate_scaling(Some(cap), variables, 0.0);
+            value = if cap < 0.0 {
+                value.max(cap)
+            } else {
+                value.min(cap)
+            };
+        }
+        result *= value;
     }
     if let Some(eqn) = &scaling.eqn {
         result *= eval_expression(eqn, variables);
+    }
+    if scaling.is_item {
+        result *= 1.0 + get_variable_value(variables, "itemEffectiveness") / 100.0;
+    }
+    if scaling.scales_with_charisma {
+        let multiplier = variables.get("charismaMultiplier").copied().unwrap_or(1.0);
+        result =
+            scaling.charisma_scaling_pivot + (result - scaling.charisma_scaling_pivot) * multiplier;
     }
     if let Some(custom) = &scaling.custom_scaling {
         let scale_value = get_variable_value(variables, &custom.scaling);
@@ -987,18 +1037,31 @@ pub fn evaluate_scaling(
     if let Some(eqn) = &scaling.additive_eqn {
         result += eval_expression(eqn, variables);
     }
+    if scaling.scales_with_room_effectiveness {
+        result *= 1.0 + get_variable_value(variables, "roomEffectiveness") / 100.0;
+    }
 
     if result > 10.0 {
         result = result.floor();
     } else if result < -10.0 {
         result = result.ceil();
     } else {
-        result = to_fixed_2(result);
+        result = if result.abs() < 0.01 {
+            (result * 1e4).round() / 1e4
+        } else {
+            to_fixed_2(result)
+        };
         if result % 1.0 == 0.0 {
             result = result.floor();
         }
     }
 
+    if ceil {
+        result = result.ceil();
+    }
+    if let Some(multiplier) = &scaling.multiplier {
+        result *= evaluate_scaling_multiplier(multiplier, variables);
+    }
     if let Some(max) = &scaling.max {
         let max_value = evaluate_scaling(Some(max), variables, f64::INFINITY);
         result = if max_value < 0.0 {
@@ -1011,8 +1074,46 @@ pub fn evaluate_scaling(
     if scaling.divide_by_stance_length {
         result = result.floor();
     }
+    if scaling.multiply_by_stance_length {
+        result = result.floor();
+    }
+    if scaling.round_to_integer {
+        result = (result + 0.5).floor();
+    }
 
     result
+}
+
+fn evaluate_scaling_multiplier(scaling: &Scaling, variables: &Variables) -> f64 {
+    if scaling.value > 0.0
+        && scaling.value < 1.0
+        && scaling.stat.is_none()
+        && scaling.scaling.is_some()
+    {
+        let step = (1.0 / scaling.value).floor();
+        let count = get_variable_value(variables, scaling.scaling.as_deref().unwrap());
+        let mut result = if let Some(increment) = scaling.increment.filter(|value| *value > 0.0) {
+            let a = increment / 2.0;
+            let b = step - a;
+            let discriminant = b * b + 4.0 * a * count;
+            if discriminant < 0.0 {
+                0.0
+            } else {
+                ((-b + discriminant.sqrt()) / (2.0 * a)).floor()
+            }
+        } else {
+            (count / step).floor()
+        };
+        if let Some(eqn) = &scaling.additive_eqn {
+            result += eval_expression(eqn, variables);
+        }
+        if let Some(max) = &scaling.max {
+            result = result.min(evaluate_scaling(Some(max), variables, 0.0));
+        }
+        result
+    } else {
+        evaluate_scaling_inner(Some(scaling), variables, 0.0, true)
+    }
 }
 
 fn apply_upgrades_to_scaling(scaling: &Scaling, upgrades: &UpgradeMap) -> Scaling {
@@ -1258,11 +1359,37 @@ pub fn build_technique_scaling_base(
     variables.insert("critchance".to_string(), 0.0);
     variables.insert("critmultiplier".to_string(), 0.0);
     variables.insert("pool".to_string(), state.qi);
+    variables.insert("qiDroplets".to_string(), state.qi_droplets);
+    variables.insert("maxqiDroplets".to_string(), state.max_qi_droplets);
+    variables.insert(
+        "qiCostReduction".to_string(),
+        state
+            .qi_cost_reduction
+            .unwrap_or((100.0 - normalize_cost_percentage(state.pool_cost_percentage)).max(0.0)),
+    );
+    variables.insert(
+        "qiCostPenalty".to_string(),
+        state
+            .qi_cost_penalty
+            .unwrap_or((normalize_cost_percentage(state.pool_cost_percentage) - 100.0).max(0.0)),
+    );
+    variables.insert(
+        "stabilityCostReduction".to_string(),
+        state.stability_cost_reduction.unwrap_or(
+            (100.0 - normalize_cost_percentage(state.stability_cost_percentage)).max(0.0),
+        ),
+    );
+    variables.insert(
+        "stabilityCostPenalty".to_string(),
+        state.stability_cost_penalty.unwrap_or(
+            (normalize_cost_percentage(state.stability_cost_percentage) - 100.0).max(0.0),
+        ),
+    );
     variables.insert("maxpool".to_string(), config.max_qi);
     variables.insert("toxicity".to_string(), state.toxicity);
     variables.insert("maxtoxicity".to_string(), state.max_toxicity);
     variables.insert("resistance".to_string(), 0.0);
-    variables.insert("itemEffectiveness".to_string(), 100.0);
+    variables.insert("itemEffectiveness".to_string(), state.item_effectiveness);
     variables.insert("pillsPerRound".to_string(), config.pills_per_round.max(1.0));
     variables.insert(
         "poolCostFlat".to_string(),
@@ -1384,6 +1511,9 @@ pub fn apply_buff_stat_contributions(
         }
 
         let mut eval_vars = variables.clone();
+        if let Some(additional) = &definition.additional_variables {
+            eval_vars.extend(additional.iter().map(|(key, value)| (key.clone(), *value)));
+        }
         eval_vars.insert("stacks".to_string(), buff.stacks as f64);
         let normalized_key = fold_key;
         if !normalized_key.is_empty() {
@@ -1397,10 +1527,21 @@ pub fn apply_buff_stat_contributions(
                 eval_vars.insert(state_key.clone(), *state_value);
             }
         }
+        eval_vars.insert("stacks".to_string(), buff.stacks as f64);
 
         for (stat_key, scaling) in stats {
             let raw = evaluate_scaling_with_upgrades(Some(scaling), upgrades, &eval_vars, 0.0);
             match stat_key.as_str() {
+                "qiCostReduction"
+                | "qiCostPenalty"
+                | "stabilityCostReduction"
+                | "stabilityCostPenalty" => {
+                    let current = get_variable_value(&adjusted, stat_key);
+                    adjusted.insert(
+                        stat_key.clone(),
+                        combine_cost_stat(stat_key.ends_with("Reduction"), current, raw),
+                    );
+                }
                 "poolCostPercentage" => {
                     let current = get_variable_value(&adjusted, "poolCostPercentage");
                     adjusted.insert(
@@ -1438,6 +1579,21 @@ pub fn apply_condition_effects_to_variables(
     effects: crate::ConditionEffectSummary,
 ) -> Variables {
     let mut adjusted = variables.clone();
+    for (prefix, multiplier) in [
+        ("qiCost", effects.pool_cost_multiplier),
+        ("stabilityCost", effects.stability_cost_multiplier),
+    ] {
+        let reduction = multiplier < 1.0;
+        let key = format!(
+            "{prefix}{}",
+            if reduction { "Reduction" } else { "Penalty" }
+        );
+        let current = get_variable_value(&adjusted, &key);
+        adjusted.insert(
+            key,
+            combine_cost_stat(reduction, current, (multiplier - 1.0).abs() * 100.0),
+        );
+    }
     let control = get_variable_value(variables, "control") * effects.control_multiplier;
     let intensity = get_variable_value(variables, "intensity") * effects.intensity_multiplier;
     let success =
@@ -1812,11 +1968,9 @@ fn compute_trigger_percent_gained(gain: f64, bar_after: f64, bar_max: f64) -> f6
 }
 
 /// Fire a 0.7.7+ crafting trigger against every held buff with a matching
-/// `triggered_effects` block, applying their `setState` writes. Mirrors
-/// `dispatchBuffTriggers` in `src/optimizer/skills.ts`: later effects in a
-/// block read earlier writes, and only `setState` is valid inside triggered
-/// blocks (anything else would re-enter an effect pipeline the runtime keeps
-/// flat).
+/// `triggered_effects` block through the general buff-effect path. Mirrors
+/// `dispatchBuffTriggers` in TypeScript, including recursive bar progress and
+/// the trigger/buff re-entry guard. Later effects read earlier state writes.
 #[allow(clippy::too_many_arguments)]
 fn dispatch_buff_triggers(
     buffs: &mut BuffSet,
@@ -1848,7 +2002,11 @@ fn dispatch_buff_triggers(
         .collect();
 
     for key in keys {
-        let (stacks, mut working, matching) = {
+        let guard = format!("{trigger}:{key}");
+        if !buffs.active_triggers.insert(guard.clone()) {
+            continue;
+        }
+        let (stacks, matching) = {
             let Some(owner) = buffs.get(&key) else {
                 continue;
             };
@@ -1864,47 +2022,152 @@ fn dispatch_buff_triggers(
                         .collect()
                 })
                 .unwrap_or_default();
-            (owner.stacks, owner.internal_state.clone(), matching)
+            (owner.stacks, matching)
         };
-        let mut dirty = false;
+        let mut scope = action_vars.clone();
+        scope.insert("pool".to_string(), new_qi);
+        scope.insert("maxpool".to_string(), qi_cap);
+        scope.insert("toxicity".to_string(), new_toxicity);
+        scope.insert("maxtoxicity".to_string(), max_toxicity);
+        scope.insert("amount".to_string(), amount);
+        scope.insert("percentGained".to_string(), percent_gained);
         for effect in &matching {
-            if effect.kind != "setState" {
-                continue;
-            }
-            let Some(state_key) = effect.key.as_ref().filter(|key| !key.is_empty()) else {
+            let Some(live_owner) = buffs.get(&key) else {
                 continue;
             };
-            let mut scope = action_vars.clone();
-            scope.insert("pool".to_string(), new_qi);
-            scope.insert("maxpool".to_string(), qi_cap);
-            scope.insert("toxicity".to_string(), new_toxicity);
-            scope.insert("maxtoxicity".to_string(), max_toxicity);
-            scope.insert("poolCostFlat".to_string(), state.pool_cost_flat);
-            scope.insert(
-                "poolCostPercentage".to_string(),
-                state.pool_cost_percentage,
-            );
-            scope.insert(
-                "stabilityCostPercentage".to_string(),
-                state.stability_cost_percentage,
-            );
-            scope.insert("stacks".to_string(), stacks as f64);
-            scope.insert("amount".to_string(), amount);
-            scope.insert("percentGained".to_string(), percent_gained);
+            let mut working = live_owner.internal_state.clone();
+            scope.insert("roomEffectiveness".to_string(), 0.0);
+            if let Some(additional) = buffs
+                .get(&key)
+                .and_then(|owner| owner.definition.as_ref())
+                .and_then(|definition| definition.additional_variables.as_ref())
+            {
+                scope.extend(additional.iter().map(|(key, value)| (key.clone(), *value)));
+            }
             for (state_key, state_value) in &working {
                 scope.insert(state_key.clone(), *state_value);
             }
+            scope.insert("stacks".to_string(), buffs.stacks(&key) as f64);
             let evaluation =
                 evaluate_effect_condition(effect.condition.as_ref(), state, &scope, stacks);
             if !evaluation.met || evaluation.probability <= 0.0 {
                 continue;
             }
-            let value = evaluate_scaling_with_upgrades(
-                effect.value.as_ref(),
-                upgrades,
-                &scope,
-                0.0,
-            );
+            if effect.kind != "setState" {
+                let raw =
+                    evaluate_scaling_with_upgrades(effect.amount.as_ref(), upgrades, &scope, 0.0)
+                        * evaluation.probability;
+                let boost = match effect.kind.as_str() {
+                    "completion" => "completionBoost",
+                    "perfection" => "perfectionBoost",
+                    "stability" => "stabilityBoost",
+                    "pool" => "qiBoost",
+                    _ => "",
+                };
+                let gain = apply_gain_boost(raw, get_variable_value(&scope, boost));
+                let followup = match effect.kind.as_str() {
+                    "completion" => {
+                        buffs.triggered.completion += gain;
+                        if buffs.record_bar_changes && gain != 0.0 {
+                            buffs.bar_contributions.push(BarContribution {
+                                completion_bar: true,
+                                amount: gain,
+                            });
+                        }
+                        let percent = buffs.record_trigger_bar_gain(true, gain);
+                        Some(("completionGained", gain, percent))
+                    }
+                    "perfection" => {
+                        buffs.triggered.perfection += gain;
+                        if buffs.record_bar_changes && gain != 0.0 {
+                            buffs.bar_contributions.push(BarContribution {
+                                completion_bar: false,
+                                amount: gain,
+                            });
+                        }
+                        let percent = buffs.record_trigger_bar_gain(false, gain);
+                        Some(("perfectionGained", gain, percent))
+                    }
+                    "stability" => {
+                        buffs.triggered.stability += gain;
+                        Some((
+                            if gain > 0.0 {
+                                "stabilityRestored"
+                            } else {
+                                "stabilitySpent"
+                            },
+                            gain.abs(),
+                            0.0,
+                        ))
+                    }
+                    "pool" => {
+                        buffs.triggered.pool += gain;
+                        Some((
+                            if gain > 0.0 {
+                                "poolRestored"
+                            } else {
+                                "poolSpent"
+                            },
+                            gain.abs(),
+                            0.0,
+                        ))
+                    }
+                    "maxStability" => {
+                        buffs.triggered.max_stability += gain;
+                        None
+                    }
+                    "changeToxicity" => {
+                        buffs.triggered.toxicity -= gain;
+                        None
+                    }
+                    "negate" => {
+                        buffs.remove(&key);
+                        None
+                    }
+                    "createBuff" => {
+                        let change = evaluate_scaling_with_upgrades(
+                            effect.stacks.as_ref(),
+                            upgrades,
+                            &scope,
+                            1.0,
+                        ) * evaluation.probability;
+                        buffs.upsert_from_definition(effect.buff.as_ref(), change, Some(&scope));
+                        None
+                    }
+                    "addStack" => {
+                        let change = evaluate_scaling_with_upgrades(
+                            effect.stacks.as_ref(),
+                            upgrades,
+                            &scope,
+                            1.0,
+                        ) * evaluation.probability;
+                        buffs.adjust_existing(&key, change);
+                        None
+                    }
+                    _ => None,
+                };
+                if let Some((next_trigger, next_amount, next_percent)) = followup {
+                    dispatch_buff_triggers(
+                        buffs,
+                        next_trigger,
+                        next_amount,
+                        next_percent,
+                        action_vars,
+                        state,
+                        upgrades,
+                        new_qi,
+                        qi_cap,
+                        new_toxicity,
+                        max_toxicity,
+                    );
+                }
+                continue;
+            }
+            let Some(state_key) = effect.key.as_ref().filter(|key| !key.is_empty()) else {
+                continue;
+            };
+            let value =
+                evaluate_scaling_with_upgrades(effect.value.as_ref(), upgrades, &scope, 0.0);
             if !value.is_finite() {
                 continue;
             }
@@ -1915,11 +2178,25 @@ fn dispatch_buff_triggers(
                 value
             };
             working.insert(state_key.clone(), next);
-            dirty = true;
+            for key in effect.keys.as_deref().unwrap_or(&[]) {
+                let value = if effect.mode.as_deref() == Some("add") {
+                    working.get(state_key).copied().unwrap_or(0.0) + value
+                } else {
+                    value
+                };
+                working.insert(key.clone(), value);
+            }
+            scope.insert(
+                state_key.clone(),
+                working.get(state_key).copied().unwrap_or(0.0),
+            );
+            for index in 0..effect.keys.as_ref().map_or(0, Vec::len) {
+                let key = index.to_string();
+                scope.insert(key.clone(), working.get(&key).copied().unwrap_or(0.0));
+            }
+            buffs.set_internal_state(&key, working.clone());
         }
-        if dirty {
-            buffs.set_internal_state(&key, working);
-        }
+        buffs.active_triggers.remove(&guard);
     }
 }
 
@@ -1927,15 +2204,50 @@ fn dispatch_buff_triggers(
 /// TypeScript simulator threads through `applySkill`.
 pub struct BuffSet {
     entries: Vec<ActiveBuff>,
+    active_triggers: std::collections::HashSet<String>,
+    triggered: TriggeredGains,
+    record_bar_changes: bool,
+    bar_contributions: Vec<BarContribution>,
+    trigger_bars: [f64; 2],
+    trigger_targets: [f64; 2],
+}
+
+#[derive(Default)]
+struct TriggeredGains {
+    completion: f64,
+    perfection: f64,
+    stability: f64,
+    pool: f64,
+    toxicity: f64,
+    max_stability: f64,
 }
 
 impl BuffSet {
     pub fn new(entries: Vec<ActiveBuff>) -> Self {
-        Self { entries }
+        Self {
+            entries,
+            active_triggers: std::collections::HashSet::new(),
+            triggered: TriggeredGains::default(),
+            record_bar_changes: false,
+            bar_contributions: Vec::new(),
+            trigger_bars: [0.0; 2],
+            trigger_targets: [0.0; 2],
+        }
     }
 
     pub fn into_vec(self) -> Vec<ActiveBuff> {
         self.entries
+    }
+
+    /// Advance before dispatch so recursive effects and later applications see
+    /// the same running bars as the TypeScript closure, not the pre-turn bars.
+    fn record_trigger_bar_gain(&mut self, completion_bar: bool, gain: f64) -> f64 {
+        if gain <= 0.0 {
+            return 0.0;
+        }
+        let index = if completion_bar { 0 } else { 1 };
+        self.trigger_bars[index] += gain;
+        compute_trigger_percent_gained(gain, self.trigger_bars[index], self.trigger_targets[index])
     }
 
     pub fn as_slice(&self) -> &[ActiveBuff] {
@@ -2076,6 +2388,7 @@ impl BuffSet {
 // Cost and gain calculation
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, Copy)]
 pub struct EffectiveActionCosts {
     pub qi_cost: f64,
     pub stability_cost: f64,
@@ -2197,6 +2510,7 @@ pub struct ActionEnv<'a> {
 /// upgrades can change the variables the *next* condition check reads, so the
 /// build/resolve pair runs twice when any upgrade rule fires.
 pub struct ResolvedAction {
+    pub success_chance: Option<f64>,
     pub variables: Variables,
     pub mastery: MasteryBonuses,
     pub upgrades: UpgradeMap,
@@ -2234,6 +2548,7 @@ pub fn resolve_action(
         upgrades = resolved.1;
     }
     ResolvedAction {
+        success_chance: None,
         variables,
         mastery,
         upgrades,
@@ -2267,6 +2582,23 @@ fn apply_mastery_to_variables(variables: &Variables, mastery: &MasteryBonuses) -
 }
 
 /// Mirrors `calculateEffectiveActionCosts`, including its rounding order.
+fn combine_cost_stat(reduction: bool, current: f64, contribution: f64) -> f64 {
+    let value = if reduction {
+        100.0 - (100.0 - current.min(100.0)) * (100.0 - contribution.min(100.0)) / 100.0
+    } else {
+        (100.0 + current) * (100.0 + contribution) / 100.0 - 100.0
+    };
+    (value * 1e10 + 0.5).floor() / 1e10
+}
+
+fn cost_multiplier(reduction: f64, penalty: f64) -> f64 {
+    (100.0 - reduction).max(0.0) * (100.0 + penalty).max(0.0) / 1e4
+}
+
+fn floor_cost(value: f64) -> f64 {
+    ((value.max(0.0) * 1e10 + 0.5).floor() / 1e10).floor()
+}
+
 pub fn calculate_effective_action_costs(
     env: &ActionEnv<'_>,
     state: &EngineState,
@@ -2287,8 +2619,9 @@ pub fn calculate_effective_action_costs(
         * (harmony_cost.stability_cost_percentage / 100.0);
 
     let mut pool_cost_flat = state.pool_cost_flat.floor().max(0.0);
-    let mut pool_cost_percentage = normalize_cost_percentage(state.pool_cost_percentage);
-    let mut stability_cost_percentage = normalize_cost_percentage(state.stability_cost_percentage);
+    let mut legacy_qi = 1.0;
+    let mut legacy_stability = 1.0;
+    let mut channels = build_technique_scaling_base(state, env.config, active_buffs);
 
     let has_cost_affecting_buff = active_buffs.iter().any(|buff| {
         buff.definition
@@ -2296,6 +2629,10 @@ pub fn calculate_effective_action_costs(
             .and_then(|definition| definition.stats.as_ref())
             .is_some_and(|stats| {
                 stats.contains_key("poolCostFlat")
+                    || stats.contains_key("qiCostReduction")
+                    || stats.contains_key("qiCostPenalty")
+                    || stats.contains_key("stabilityCostReduction")
+                    || stats.contains_key("stabilityCostPenalty")
                     || stats.contains_key("poolCostPercentage")
                     || stats.contains_key("stabilityCostPercentage")
             })
@@ -2319,38 +2656,69 @@ pub fn calculate_effective_action_costs(
         pool_cost_flat = get_variable_value(&runtime_vars, "poolCostFlat")
             .floor()
             .max(0.0);
-        pool_cost_percentage =
-            normalize_cost_percentage(get_variable_value(&runtime_vars, "poolCostPercentage"));
-        stability_cost_percentage =
-            normalize_cost_percentage(get_variable_value(&runtime_vars, "stabilityCostPercentage"));
+        // Only an actual legacy stat may apply its compatibility floor/ratio.
+        // Modern fractional channels must not be rounded through this view.
+        let has_legacy_stat = |key: &str| {
+            active_buffs.iter().any(|buff| {
+                buff.definition
+                    .as_ref()
+                    .and_then(|definition| definition.stats.as_ref())
+                    .is_some_and(|stats| stats.contains_key(key))
+            })
+        };
+        if has_legacy_stat("poolCostPercentage") {
+            legacy_qi =
+                normalize_cost_percentage(get_variable_value(&runtime_vars, "poolCostPercentage"))
+                    / normalize_cost_percentage(state.pool_cost_percentage).max(1e-10);
+        }
+        if has_legacy_stat("stabilityCostPercentage") {
+            legacy_stability = normalize_cost_percentage(get_variable_value(
+                &runtime_vars,
+                "stabilityCostPercentage",
+            )) / normalize_cost_percentage(state.stability_cost_percentage)
+                .max(1e-10);
+        }
+        channels = runtime_vars;
     }
 
-    pool_cost_percentage *= condition_effects.pool_cost_multiplier;
-    stability_cost_percentage *= condition_effects.stability_cost_multiplier;
-
-    let mut qi_cost = effective_qi_cost(skill);
-    let mut stability_delta = -effective_stability_cost(skill);
-
-    if pool_cost_flat > 0.0 {
-        qi_cost = (qi_cost + pool_cost_flat).max(0.0);
+    for (prefix, multiplier) in [
+        ("qiCost", condition_effects.pool_cost_multiplier),
+        ("stabilityCost", condition_effects.stability_cost_multiplier),
+    ] {
+        let reduction = multiplier < 1.0;
+        let key = format!(
+            "{prefix}{}",
+            if reduction { "Reduction" } else { "Penalty" }
+        );
+        let current = get_variable_value(&channels, &key);
+        channels.insert(
+            key,
+            combine_cost_stat(reduction, current, (multiplier - 1.0).abs() * 100.0),
+        );
     }
-    if pool_cost_percentage != 100.0 {
-        qi_cost = (qi_cost * pool_cost_percentage / 100.0).floor();
-    }
-    if harmony_pool_multiplier != 1.0 {
-        qi_cost = (qi_cost.max(0.0) * harmony_pool_multiplier).floor();
-    }
-
-    if stability_delta < 0.0 && stability_cost_percentage != 100.0 {
-        stability_delta = (stability_delta * stability_cost_percentage / 100.0).ceil();
-    }
-    if stability_delta < 0.0 && harmony_stability_multiplier != 1.0 {
-        stability_delta = (stability_delta * harmony_stability_multiplier).floor();
-    }
+    let qi_multiplier = cost_multiplier(
+        get_variable_value(&channels, "qiCostReduction"),
+        get_variable_value(&channels, "qiCostPenalty"),
+    );
+    let stability_multiplier = cost_multiplier(
+        get_variable_value(&channels, "stabilityCostReduction"),
+        get_variable_value(&channels, "stabilityCostPenalty"),
+    );
+    let qi_cost = if skill.no_qi_cost {
+        0.0
+    } else {
+        (floor_cost((effective_qi_cost(skill) + pool_cost_flat) * qi_multiplier * legacy_qi)
+            * harmony_pool_multiplier)
+            .floor()
+    };
+    let stability_cost =
+        (floor_cost(effective_stability_cost(skill) * stability_multiplier * legacy_stability)
+            * harmony_stability_multiplier)
+            .floor();
 
     EffectiveActionCosts {
         qi_cost: qi_cost.max(0.0),
-        stability_cost: (-stability_delta).max(0.0),
+        stability_cost,
     }
 }
 
@@ -2425,11 +2793,13 @@ pub fn calculate_skill_gains(
         get_variable_value(&scaling_vars, "critchance"),
         get_variable_value(&scaling_vars, "critmultiplier"),
     );
-    let total_success_chance = clamp(
-        skill.success_chance + get_variable_value(&scaling_vars, "successChanceBonus"),
-        0.0,
-        1.0,
-    );
+    let total_success_chance = resolved.success_chance.unwrap_or_else(|| {
+        clamp(
+            skill.success_chance + get_variable_value(&scaling_vars, "successChanceBonus"),
+            0.0,
+            1.0,
+        )
+    });
     let expected_factor = total_success_chance;
 
     if !skill.effects.is_empty() {
@@ -2639,6 +3009,9 @@ pub fn can_apply_skill(
     }
 
     let is_item = skill.action_kind == "item";
+    if state.qi_droplets < skill.droplet_cost {
+        return false;
+    }
 
     if !is_item && state.cooldowns.get(skill_index).copied().unwrap_or(0) > 0 {
         return false;
@@ -2758,8 +3131,6 @@ pub fn apply_skill_with_buffs(
     target_completion: f64,
     active_buffs: &[ActiveBuff],
 ) -> Option<EngineState> {
-    profile_count!(ApplySkill);
-    let config = env.config;
     if !can_apply_skill(
         env,
         state,
@@ -2771,16 +3142,292 @@ pub fn apply_skill_with_buffs(
     ) {
         return None;
     }
+    let mut buffs = BuffSet::new(active_buffs.to_vec());
+    let mut phase = ActionPhaseContext {
+        existing_names: active_buffs.iter().map(|buff| buff.key.clone()).collect(),
+        success_chance: if skill.action_kind == "item" {
+            1.0
+        } else {
+            let resolved = resolve_action(env, state, skill, condition_effects, active_buffs);
+            (skill.success_chance + get_variable_value(&resolved.variables, "successChanceBonus"))
+                .clamp(0.0, 1.0)
+        },
+        completion: state.completion,
+        perfection: state.perfection,
+        bar_contributions: Vec::new(),
+        payment_costs: None,
+    };
+    if let Some(cost) = &skill.buff_cost {
+        let have = buffs.stacks(&cost.buff_name);
+        let remaining = if cost.consume_all {
+            0
+        } else {
+            (have - cost.amount.unwrap_or(0.0).floor() as i32).max(0)
+        };
+        buffs.set_stacks(&cost.buff_name, remaining);
+    }
+    let mut working = EngineState {
+        buffs: buffs.into_vec(),
+        toxicity: state.toxicity + skill.toxicity_cost,
+        qi_droplets: (state.qi_droplets - skill.droplet_cost).max(0.0),
+        ..state.clone()
+    };
+    let captured_success = phase.success_chance;
+    let payment_costs = expected_mastery_payment(
+        env,
+        &working,
+        skill_index,
+        skill,
+        condition_effects,
+        target_completion,
+        &phase,
+    );
+    for entry in &skill.mastery_entries {
+        if entry.kind != "effect" {
+            continue;
+        }
+        let Some(effects) = &entry.effects else {
+            continue;
+        };
+        let resolved = resolve_action(env, &working, skill, condition_effects, &working.buffs);
+        let evaluation =
+            evaluate_effect_condition(entry.condition.as_ref(), &working, &resolved.variables, 0);
+        if !evaluation.met || evaluation.probability <= 0.0 {
+            continue;
+        }
+        let phase_skill = EngineSkill {
+            name: skill.name.clone(),
+            key: skill.key.clone(),
+            technique_type: skill.technique_type.clone(),
+            no_qi_cost: true,
+            consumes_turn: false,
+            success_chance: 1.0,
+            effects: effects.clone(),
+            mastery_entries: skill
+                .mastery_entries
+                .iter()
+                .filter(|entry| entry.kind != "effect")
+                .cloned()
+                .collect(),
+            ..EngineSkill::default()
+        };
+        phase.success_chance = evaluation.probability;
+        working = apply_skill_transition(
+            env,
+            &working,
+            skill_index,
+            &phase_skill,
+            condition_effects,
+            target_completion,
+            &working.buffs,
+            &mut phase,
+        );
+    }
+    phase.success_chance = captured_success;
+    // Keep HEAD's expected-stack approximation for subsequent turns; integrate
+    // realized, individually rounded outcomes only for this action's payment.
+    phase.payment_costs = payment_costs;
+    Some(apply_skill_transition(
+        env,
+        &working,
+        skill_index,
+        skill,
+        condition_effects,
+        target_completion,
+        &working.buffs,
+        &mut phase,
+    ))
+}
+
+struct ActionPhaseContext {
+    existing_names: std::collections::HashSet<String>,
+    success_chance: f64,
+    completion: f64,
+    perfection: f64,
+    bar_contributions: Vec<BarContribution>,
+    payment_costs: Option<EffectiveActionCosts>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn expected_mastery_payment(
+    env: &ActionEnv<'_>,
+    start: &EngineState,
+    skill_index: usize,
+    skill: &EngineSkill,
+    condition_effects: crate::ConditionEffectSummary,
+    target_completion: f64,
+    phase: &ActionPhaseContext,
+) -> Option<EffectiveActionCosts> {
+    let is_chance = |condition: &Option<EffectCondition>| {
+        condition
+            .as_ref()
+            .is_some_and(|condition| condition.kind == "chance")
+    };
+    let entries: Vec<_> = skill
+        .mastery_entries
+        .iter()
+        .filter(|entry| entry.kind == "effect" && entry.effects.is_some())
+        .collect();
+    if !entries.iter().any(|entry| {
+        is_chance(&entry.condition)
+            || entry
+                .effects
+                .as_ref()
+                .unwrap()
+                .iter()
+                .any(|effect| is_chance(&effect.condition))
+    }) {
+        return None;
+    }
+    // Local quadrature, not search branching or a persistent probabilistic buff.
+    let mut outcomes = vec![(1.0, start.clone())];
+    for entry in entries {
+        let mut effect_outcomes = vec![(1.0, Vec::<Effect>::new())];
+        for effect in entry.effects.as_ref().unwrap() {
+            if !is_chance(&effect.condition) {
+                for (_, effects) in &mut effect_outcomes {
+                    effects.push(effect.clone());
+                }
+                continue;
+            }
+            let probability =
+                (effect.condition.as_ref().unwrap().percentage / 100.0).clamp(0.0, 1.0);
+            let mut next = Vec::new();
+            for (weight, effects) in effect_outcomes {
+                if probability < 1.0 {
+                    next.push((weight * (1.0 - probability), effects.clone()));
+                }
+                if probability > 0.0 {
+                    let mut effects = effects;
+                    let mut realized = effect.clone();
+                    realized.condition = None;
+                    effects.push(realized);
+                    next.push((weight * probability, effects));
+                }
+            }
+            effect_outcomes = next;
+        }
+        let mut next = Vec::new();
+        for (weight, state) in outcomes {
+            let resolved = resolve_action(env, &state, skill, condition_effects, &state.buffs);
+            let evaluation =
+                evaluate_effect_condition(entry.condition.as_ref(), &state, &resolved.variables, 0);
+            if !evaluation.met || evaluation.probability < 1.0 {
+                next.push((
+                    weight
+                        * if evaluation.met {
+                            1.0 - evaluation.probability
+                        } else {
+                            1.0
+                        },
+                    state.clone(),
+                ));
+            }
+            if !evaluation.met || evaluation.probability <= 0.0 {
+                continue;
+            }
+            for (probability, effects) in &effect_outcomes {
+                let realized = if effects.is_empty() {
+                    state.clone()
+                } else {
+                    let phase_skill = EngineSkill {
+                        name: skill.name.clone(),
+                        key: skill.key.clone(),
+                        technique_type: skill.technique_type.clone(),
+                        no_qi_cost: true,
+                        consumes_turn: false,
+                        success_chance: 1.0,
+                        effects: effects.clone(),
+                        mastery_entries: skill
+                            .mastery_entries
+                            .iter()
+                            .filter(|entry| entry.kind != "effect")
+                            .cloned()
+                            .collect(),
+                        ..EngineSkill::default()
+                    };
+                    let mut local = ActionPhaseContext {
+                        existing_names: phase.existing_names.clone(),
+                        success_chance: 1.0,
+                        completion: phase.completion,
+                        perfection: phase.perfection,
+                        bar_contributions: Vec::new(),
+                        payment_costs: None,
+                    };
+                    apply_skill_transition(
+                        env,
+                        &state,
+                        skill_index,
+                        &phase_skill,
+                        condition_effects,
+                        target_completion,
+                        &state.buffs,
+                        &mut local,
+                    )
+                };
+                next.push((weight * evaluation.probability * probability, realized));
+            }
+        }
+        outcomes = next;
+    }
+    let costs: Vec<_> = outcomes
+        .into_iter()
+        .map(|(probability, state)| {
+            (
+                probability,
+                calculate_effective_action_costs(
+                    env,
+                    &state,
+                    skill,
+                    condition_effects,
+                    &state.buffs,
+                ),
+            )
+        })
+        .collect();
+    let first = costs.first()?.1;
+    if costs.iter().all(|(_, cost)| {
+        cost.qi_cost == first.qi_cost && cost.stability_cost == first.stability_cost
+    }) {
+        return None;
+    }
+    Some(EffectiveActionCosts {
+        qi_cost: costs
+            .iter()
+            .map(|(probability, cost)| probability * cost.qi_cost)
+            .sum(),
+        stability_cost: costs
+            .iter()
+            .map(|(probability, cost)| probability * cost.stability_cost)
+            .sum(),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_skill_transition(
+    env: &ActionEnv<'_>,
+    state: &EngineState,
+    skill_index: usize,
+    skill: &EngineSkill,
+    condition_effects: crate::ConditionEffectSummary,
+    target_completion: f64,
+    active_buffs: &[ActiveBuff],
+    phase: &mut ActionPhaseContext,
+) -> EngineState {
+    profile_count!(ApplySkill);
+    let config = env.config;
 
     let is_item = skill.action_kind == "item";
     let consumes_turn = skill.consumes_turn;
     let next_step = state.step + i32::from(consumes_turn);
 
     let mut qi_cap = effective_max_pool(state, config, active_buffs);
-    let resolved = resolve_action(env, state, skill, condition_effects, active_buffs);
+    let mut resolved = resolve_action(env, state, skill, condition_effects, active_buffs);
+    resolved.success_chance = Some(phase.success_chance);
     let gains = calculate_skill_gains(env, state, skill, &resolved);
-    let costs =
-        calculate_effective_action_costs(env, state, skill, condition_effects, active_buffs);
+    let costs = phase.payment_costs.unwrap_or_else(|| {
+        calculate_effective_action_costs(env, state, skill, condition_effects, active_buffs)
+    });
 
     let mut new_qi = clamp(state.qi - costs.qi_cost, 0.0, qi_cap);
     // 0.7.7+ trigger amounts: the runtime fires `poolSpent` when the cost is
@@ -2809,9 +3456,6 @@ pub fn apply_skill_with_buffs(
     // `(!i.noMaxStabilityLoss||E7o(e))&&t.stabilityPenalty++` and `D7o`).
     let max_stability_sealed = has_sealed_max_stability_buff(active_buffs);
     let mut penalty = state.stability_penalty;
-    if consumes_turn && (!skill.prevents_max_stability_decay || max_stability_sealed) {
-        penalty += 1.0;
-    }
     penalty = penalty.min(initial_max);
     let mut new_max_stability = initial_max - penalty;
     if skill.max_stability_change != 0.0 {
@@ -2820,9 +3464,7 @@ pub fn apply_skill_with_buffs(
         } else {
             skill.max_stability_change
         };
-        penalty = (penalty - effective_change)
-            .max(0.0)
-            .min(initial_max);
+        penalty = (penalty - effective_change).max(0.0).min(initial_max);
         new_max_stability = initial_max - penalty;
     }
     if skill.restores_max_stability_to_full && !max_stability_sealed {
@@ -2830,10 +3472,13 @@ pub fn apply_skill_with_buffs(
         new_max_stability = initial_max;
     }
 
-    let mut new_stability = (state.stability - costs.stability_cost + gains.stability).floor();
+    let mut new_stability = state.stability - costs.stability_cost + gains.stability;
+    if phase.payment_costs.is_none() {
+        new_stability = new_stability.floor();
+    }
     new_stability = clamp(new_stability, 0.0, new_max_stability);
 
-    let mut new_toxicity = state.toxicity + skill.toxicity_cost;
+    let mut new_toxicity = state.toxicity;
     if gains.toxicity_cleanse > 0.0 {
         new_toxicity = (new_toxicity - gains.toxicity_cleanse).max(0.0);
     }
@@ -2908,17 +3553,7 @@ pub fn apply_skill_with_buffs(
     }
 
     let mut buffs = BuffSet::new(active_buffs.to_vec());
-    if let Some(buff_cost) = skill.buff_cost.as_ref() {
-        let have = buffs.stacks(&buff_cost.buff_name);
-        if have > 0 {
-            let consume = if buff_cost.consume_all {
-                have
-            } else {
-                have.min(buff_cost.amount.unwrap_or(0.0).floor() as i32)
-            };
-            buffs.set_stacks(&buff_cost.buff_name, (have - consume).max(0));
-        }
-    }
+    buffs.record_bar_changes = needs_bar_contributions(config);
 
     // The TypeScript simulator refreshes the Qi ceiling here - after the buff
     // cost has been paid but *before* any technique effect runs - so a buff this
@@ -2945,15 +3580,7 @@ pub fn apply_skill_with_buffs(
     }
 
     let action_vars = apply_mastery_to_variables(&resolved.variables, &resolved.mastery);
-    let action_success_chance = if is_item {
-        1.0
-    } else {
-        clamp(
-            skill.success_chance + get_variable_value(&action_vars, "successChanceBonus"),
-            0.0,
-            1.0,
-        )
-    };
+    let action_success_chance = phase.success_chance;
 
     let mut technique_pool_delta = 0.0;
     let mut technique_max_stability_delta = 0.0;
@@ -3027,9 +3654,9 @@ pub fn apply_skill_with_buffs(
     // fires triggers as each change lands - cost payment, technique
     // applications, then per-turn buff effects - so dispatches run after the
     // technique effects and the buff fold re-reads the mutated state.
-    let trigger_buffs_present = consumes_turn && has_triggered_effect_buffs(buffs.as_slice());
-    let mut running_completion = state.completion;
-    let mut running_perfection = state.perfection;
+    let trigger_buffs_present = has_triggered_effect_buffs(buffs.as_slice());
+    buffs.trigger_bars = [state.completion, state.perfection];
+    buffs.trigger_targets = [target_completion, config.target_perfection];
 
     if trigger_buffs_present {
         if qi_spent_by_cost > 0.0 {
@@ -3137,16 +3764,12 @@ pub fn apply_skill_with_buffs(
                 continue;
             }
             if contribution.completion_bar {
-                let bar_after = running_completion + contribution.amount;
+                let percent = buffs.record_trigger_bar_gain(true, contribution.amount);
                 dispatch_buff_triggers(
                     &mut buffs,
                     "completionGained",
                     contribution.amount,
-                    compute_trigger_percent_gained(
-                        contribution.amount,
-                        bar_after,
-                        target_completion,
-                    ),
+                    percent,
                     &action_vars,
                     state,
                     &resolved.upgrades,
@@ -3155,17 +3778,13 @@ pub fn apply_skill_with_buffs(
                     new_toxicity,
                     config.max_toxicity,
                 );
-                running_completion = bar_after;
             } else {
-                let bar_after = running_perfection + contribution.amount;
-                // No 0.7.8 buff consumes `perfectionGained`; the perfection
-                // tier max is not threaded into the engine, so percentGained
-                // stays 0 until one does.
+                let percent = buffs.record_trigger_bar_gain(false, contribution.amount);
                 dispatch_buff_triggers(
                     &mut buffs,
                     "perfectionGained",
                     contribution.amount,
-                    0.0,
+                    percent,
                     &action_vars,
                     state,
                     &resolved.upgrades,
@@ -3174,7 +3793,6 @@ pub fn apply_skill_with_buffs(
                     new_toxicity,
                     config.max_toxicity,
                 );
-                running_perfection = bar_after;
             }
         }
     }
@@ -3196,6 +3814,9 @@ pub fn apply_skill_with_buffs(
         // created while executing effects do not execute in the same turn.
         let snapshot = buffs.as_slice().to_vec();
         for owner in &snapshot {
+            if !phase.existing_names.contains(&owner.key) {
+                continue;
+            }
             // Triggered effects may have rewritten this buff's internal state
             // already this action, so read the live entry, not the snapshot.
             let Some(live) = buffs.get(&owner.key) else {
@@ -3207,6 +3828,10 @@ pub fn apply_skill_with_buffs(
                 continue;
             };
             let mut scaling_vars = action_vars.clone();
+            scaling_vars.insert("roomEffectiveness".to_string(), 0.0);
+            if let Some(additional) = &definition.additional_variables {
+                scaling_vars.extend(additional.iter().map(|(key, value)| (key.clone(), *value)));
+            }
             scaling_vars.insert("pool".to_string(), new_qi);
             scaling_vars.insert("maxpool".to_string(), qi_cap);
             scaling_vars.insert("toxicity".to_string(), new_toxicity);
@@ -3226,6 +3851,21 @@ pub fn apply_skill_with_buffs(
 
             let mut run = |effects: &[Effect]| {
                 for effect in effects {
+                    let Some(live_owner) = buffs.get(&owner.key) else {
+                        continue;
+                    };
+                    scaling_vars.insert("roomEffectiveness".to_string(), 0.0);
+                    if let Some(additional) = &definition.additional_variables {
+                        scaling_vars
+                            .extend(additional.iter().map(|(key, value)| (key.clone(), *value)));
+                    }
+                    scaling_vars.extend(
+                        live_owner
+                            .internal_state
+                            .iter()
+                            .map(|(key, value)| (key.clone(), *value)),
+                    );
+                    scaling_vars.insert("stacks".to_string(), live_owner.stacks as f64);
                     let evaluation = evaluate_effect_condition(
                         effect.condition.as_ref(),
                         state,
@@ -3257,7 +3897,7 @@ pub fn apply_skill_with_buffs(
                         "completion" => {
                             buff_completion += amount;
                             if record_bar_changes && amount != 0.0 {
-                                buff_bar_contributions.push(BarContribution {
+                                buffs.bar_contributions.push(BarContribution {
                                     completion_bar: true,
                                     amount,
                                 });
@@ -3266,16 +3906,12 @@ pub fn apply_skill_with_buffs(
                             // triggers as technique applications (e.g. Illume
                             // Crucible's onStabilize completion feeds blaze).
                             if trigger_buffs_present && amount > 0.0 {
-                                let bar_after = running_completion + amount;
+                                let percent = buffs.record_trigger_bar_gain(true, amount);
                                 dispatch_buff_triggers(
                                     &mut buffs,
                                     "completionGained",
                                     amount,
-                                    compute_trigger_percent_gained(
-                                        amount,
-                                        bar_after,
-                                        target_completion,
-                                    ),
+                                    percent,
                                     &action_vars,
                                     state,
                                     &resolved.upgrades,
@@ -3284,24 +3920,23 @@ pub fn apply_skill_with_buffs(
                                     new_toxicity,
                                     config.max_toxicity,
                                 );
-                                running_completion = bar_after;
                             }
                         }
                         "perfection" => {
                             buff_perfection += amount;
                             if record_bar_changes && amount != 0.0 {
-                                buff_bar_contributions.push(BarContribution {
+                                buffs.bar_contributions.push(BarContribution {
                                     completion_bar: false,
                                     amount,
                                 });
                             }
                             if trigger_buffs_present && amount > 0.0 {
-                                let bar_after = running_perfection + amount;
+                                let percent = buffs.record_trigger_bar_gain(false, amount);
                                 dispatch_buff_triggers(
                                     &mut buffs,
                                     "perfectionGained",
                                     amount,
-                                    0.0,
+                                    percent,
                                     &action_vars,
                                     state,
                                     &resolved.upgrades,
@@ -3310,7 +3945,6 @@ pub fn apply_skill_with_buffs(
                                     new_toxicity,
                                     config.max_toxicity,
                                 );
-                                running_perfection = bar_after;
                             }
                         }
                         "stability" => {
@@ -3412,6 +4046,26 @@ pub fn apply_skill_with_buffs(
                                         value
                                     };
                                     next_state.insert(state_key.clone(), next);
+                                    for key in effect.keys.as_deref().unwrap_or(&[]) {
+                                        let value = if effect.mode.as_deref() == Some("add") {
+                                            next_state.get(state_key).copied().unwrap_or(0.0)
+                                                + value
+                                        } else {
+                                            value
+                                        };
+                                        next_state.insert(key.clone(), value);
+                                    }
+                                    scaling_vars.insert(
+                                        state_key.clone(),
+                                        next_state.get(state_key).copied().unwrap_or(0.0),
+                                    );
+                                    for index in 0..effect.keys.as_ref().map_or(0, Vec::len) {
+                                        let key = index.to_string();
+                                        scaling_vars.insert(
+                                            key.clone(),
+                                            next_state.get(&key).copied().unwrap_or(0.0),
+                                        );
+                                    }
                                     buffs.set_internal_state(&owner.key, next_state);
                                 }
                             }
@@ -3421,7 +4075,6 @@ pub fn apply_skill_with_buffs(
                 }
             };
 
-            run(&definition.effects);
             let action_effects = match skill.technique_type.as_str() {
                 "fusion" => definition.on_fusion.as_deref(),
                 "refine" => definition.on_refine.as_deref(),
@@ -3432,6 +4085,7 @@ pub fn apply_skill_with_buffs(
             if let Some(effects) = action_effects {
                 run(effects);
             }
+            run(&definition.effects);
         }
 
         if grants_turbid_qi_stack(next_step) {
@@ -3441,6 +4095,14 @@ pub fn apply_skill_with_buffs(
         }
     }
 
+    let triggered = std::mem::take(&mut buffs.triggered);
+    buff_completion += triggered.completion;
+    buff_perfection += triggered.perfection;
+    buff_stability_delta += triggered.stability;
+    buff_pool_delta += triggered.pool;
+    buff_toxicity_delta += triggered.toxicity;
+    buff_max_stability_delta += triggered.max_stability;
+    buff_bar_contributions.append(&mut buffs.bar_contributions);
     let mut new_completion = state.completion + gains.completion + buff_completion;
     let mut new_perfection = state.perfection + gains.perfection + buff_perfection;
     new_qi = clamp(new_qi + technique_pool_delta, 0.0, qi_cap);
@@ -3471,9 +4133,7 @@ pub fn apply_skill_with_buffs(
         } else {
             technique_max_stability_delta
         };
-        penalty = (penalty - effective_delta)
-            .max(0.0)
-            .min(initial_max);
+        penalty = (penalty - effective_delta).max(0.0).min(initial_max);
         let bound = initial_max - penalty;
         if new_stability > bound {
             new_stability = bound;
@@ -3493,9 +4153,7 @@ pub fn apply_skill_with_buffs(
         } else {
             buff_max_stability_delta
         };
-        penalty = (penalty - effective_delta)
-            .max(0.0)
-            .min(initial_max);
+        penalty = (penalty - effective_delta).max(0.0).min(initial_max);
         let bound = initial_max - penalty;
         if new_stability > bound {
             new_stability = bound;
@@ -3505,6 +4163,12 @@ pub fn apply_skill_with_buffs(
     profile_count!(StateClone);
     let mut next = EngineState {
         qi: new_qi,
+        qi_droplets: state.qi_droplets,
+        max_qi_droplets: state.max_qi_droplets,
+        qi_cost_reduction: state.qi_cost_reduction,
+        qi_cost_penalty: state.qi_cost_penalty,
+        stability_cost_reduction: state.stability_cost_reduction,
+        stability_cost_penalty: state.stability_cost_penalty,
         stability: new_stability,
         stability_penalty: penalty,
         completion: new_completion,
@@ -3544,16 +4208,20 @@ pub fn apply_skill_with_buffs(
                     gains.perfection,
                 )
             };
+            let mut contributions = phase.bar_contributions.clone();
+            contributions.extend(technique_bar_contributions);
             crate::build_bar_change_events(
-                state.completion,
-                state.perfection,
-                &technique_bar_contributions,
+                phase.completion,
+                phase.perfection,
+                &contributions,
                 &buff_bar_contributions,
             )
         } else {
             Vec::new()
         };
         let context = crate::HarmonyProcessContext {
+            pool_cost: costs.qi_cost,
+            starting_max_pool: config.max_qi,
             completion: next.completion,
             perfection: next.perfection,
             max_completion: config.max_completion.unwrap_or(next.completion),
@@ -3584,6 +4252,21 @@ pub fn apply_skill_with_buffs(
         }
         if result.pool_delta != 0.0 {
             next.qi = clamp(next.qi + result.pool_delta, 0.0, qi_cap);
+            if config.crafting_type.as_deref() == Some("returningCycle") {
+                next.qi = clamp(next.qi.floor(), 0.0, qi_cap);
+                if result.precision_stacks_added > 0.0 {
+                    // Existing buffs ticked above; release stacks cannot affect or
+                    // decay on the releasing action. Direct drain fires no triggers.
+                    let definition = returned_precision_definition();
+                    let mut released = BuffSet::new(std::mem::take(&mut next.buffs));
+                    released.upsert_from_definition(
+                        Some(&definition),
+                        result.precision_stacks_added,
+                        None,
+                    );
+                    next.buffs = released.into_vec();
+                }
+            }
         }
         if result.stability_penalty_delta != 0.0 {
             next.stability_penalty =
@@ -3595,5 +4278,51 @@ pub fn apply_skill_with_buffs(
         }
     }
 
-    Some(next)
+    if record_bar_changes && !consumes_turn {
+        let contributions = if gains.bar_contributions.is_empty() {
+            crate::synthesize_bar_contributions(gains.completion, gains.perfection)
+        } else {
+            crate::scale_bar_contributions(
+                &gains.bar_contributions,
+                gains.completion,
+                gains.perfection,
+            )
+        };
+        phase.bar_contributions.extend(contributions);
+        phase.bar_contributions.extend(buff_bar_contributions);
+    }
+    if consumes_turn
+        && (!skill.prevents_max_stability_decay || has_sealed_max_stability_buff(&next.buffs))
+    {
+        next.stability_penalty += 1.0;
+    }
+    // Preserve the expectation of chance-gated integer penalties, rather
+    // than rounding their weighted average up to a certain extra loss.
+    next.stability_penalty = next.stability_penalty.clamp(0.0, initial_max);
+    next.stability = clamp(next.stability, 0.0, initial_max - next.stability_penalty);
+    next
+}
+
+pub(crate) fn returned_precision_definition() -> BuffDefinition {
+    BuffDefinition {
+        name: "Returned Precision".to_string(),
+        can_stack: Some(true),
+        stats: Some(BTreeMap::from([(
+            "critchance".to_string(),
+            Scaling {
+                value: 1.0,
+                scaling: Some("stacks".to_string()),
+                ..Scaling::default()
+            },
+        )])),
+        effects: vec![Effect {
+            kind: "addStack".to_string(),
+            stacks: Some(Scaling {
+                value: -1.0,
+                ..Scaling::default()
+            }),
+            ..Effect::default()
+        }],
+        ..BuffDefinition::default()
+    }
 }

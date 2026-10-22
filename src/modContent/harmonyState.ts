@@ -5,6 +5,7 @@ import {
   HarmonyType,
   TechniqueType,
   TrackedBuff,
+  resolveReturningCycleData,
 } from '../optimizer';
 
 export type HarmonyDataSource =
@@ -66,6 +67,9 @@ function cloneHarmonyData(harmonyData: HarmonyData): HarmonyData {
   }
   if (harmonyData.captivatingCadence) {
     clone.captivatingCadence = { ...harmonyData.captivatingCadence };
+  }
+  if (harmonyData.returningCycle) {
+    clone.returningCycle = { ...harmonyData.returningCycle };
   }
   if (harmonyData.additionalData !== undefined) {
     clone.additionalData = JSON.parse(
@@ -207,6 +211,7 @@ export function hydrateHarmonyData(params: {
   craftingType?: HarmonyType | null;
   progressHarmonyData?: HarmonyData | null;
   nativeVariables?: Record<string, number>;
+  rawMaxPool?: number;
   buffs?: Map<string, TrackedBuff>;
   /** Live completion, used to seed absent Eccentric Decree state. */
   completion?: number;
@@ -225,6 +230,21 @@ export function hydrateHarmonyData(params: {
 
   if (!isSublimeCraft || !craftingType) {
     return { harmonyData: undefined, source: 'missing' };
+  }
+
+  if (craftingType === 'returningCycle') {
+    const harmonyData = cloneHarmonyData(
+      progressHarmonyData ?? { recommendedTechniqueTypes: [] },
+    );
+    harmonyData.returningCycle = resolveReturningCycleData(
+      harmonyData.returningCycle,
+      params.rawMaxPool ?? 0,
+    );
+    harmonyData.recommendedTechniqueTypes = [];
+    return {
+      harmonyData,
+      source: progressHarmonyData ? 'progressState' : 'missing',
+    };
   }
 
   if (progressHarmonyData) {
@@ -260,9 +280,8 @@ export function hydrateHarmonyData(params: {
     return {
       harmonyData: {
         forgeWorks: { heat: nativeHeat },
-        recommendedTechniqueTypes: getForgeRecommendedTechniqueTypes(
-          nativeHeat,
-        ),
+        recommendedTechniqueTypes:
+          getForgeRecommendedTechniqueTypes(nativeHeat),
       },
       source: 'nativeVariables',
     };

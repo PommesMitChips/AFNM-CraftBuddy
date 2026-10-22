@@ -278,7 +278,9 @@ const crossStepSearchCache = new CrossStepSearchCache();
 // Worker-pool probe/lifecycle messages surface in the debug log; the
 // structured status is mirrored into integrationDiagnostics by
 // checkIntegrationHealth.
-setSearchBackendDiagnosticsHook((message) => debugLog(`[CraftBuddy] ${message}`));
+setSearchBackendDiagnosticsHook((message) =>
+  debugLog(`[CraftBuddy] ${message}`),
+);
 
 /**
  * Scope signature for the cross-step transposition cache: everything that
@@ -1871,6 +1873,7 @@ function updateRecommendation(
     recipeStats || lastRecipeStats,
   );
   const { harmonyData, source: harmonyDataSource } = hydrateHarmonyData({
+    rawMaxPool: parseGameNumber(entity?.stats?.maxpool, 100),
     isSublimeCraft,
     craftingType: currentCraftingType,
     progressHarmonyData: gameHarmonyData,
@@ -1901,8 +1904,19 @@ function updateRecommendation(
     critMultiplier,
     successChanceBonus,
     poolCostFlat,
-    poolCostPercentage,
-    stabilityCostPercentage,
+    qiDroplets: parseGameNumber(entity?.stats?.qiDroplets, 0),
+    itemEffectiveness: parseGameNumber(entity?.stats?.itemEffectiveness, 0),
+    maxQiDroplets: parseGameNumber(entity?.stats?.maxqiDroplets, 0),
+    qiCostReduction: parseGameNumber(entity?.stats?.qiCostReduction, 0),
+    qiCostPenalty: parseGameNumber(entity?.stats?.qiCostPenalty, 0),
+    stabilityCostReduction: parseGameNumber(
+      entity?.stats?.stabilityCostReduction,
+      0,
+    ),
+    stabilityCostPenalty: parseGameNumber(
+      entity?.stats?.stabilityCostPenalty,
+      0,
+    ),
     controlBuffTurns,
     intensityBuffTurns,
     controlBuffMultiplier,
@@ -2023,9 +2037,7 @@ function updateRecommendation(
         targetCompletion: targetCompletionAtSearchStart,
         targetPerfection: targetPerfectionAtSearchStart,
         lookaheadDepth,
-        currentCondition: currentConditionType as
-          | CraftingCondition
-          | undefined,
+        currentCondition: currentConditionType as CraftingCondition | undefined,
         forecast: forecastedConditionTypes as CraftingCondition[],
         searchConfig,
       };
@@ -2040,7 +2052,10 @@ function updateRecommendation(
         ],
         input: serializeSearchInput(backendInput),
       });
-      if (outcome.kind === 'stale' || searchEpoch !== recommendationSearchEpoch) {
+      if (
+        outcome.kind === 'stale' ||
+        searchEpoch !== recommendationSearchEpoch
+      ) {
         return;
       }
       const recommendation =

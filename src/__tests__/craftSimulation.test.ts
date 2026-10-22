@@ -705,15 +705,7 @@ describe('craft simulation — finish craft policy', () => {
       perfection: 110,
     });
 
-    const sim = simulateCraft(
-      state,
-      config,
-      130,
-      130,
-      ['neutral'],
-      5,
-      4,
-    );
+    const sim = simulateCraft(state, config, 130, 130, ['neutral'], 5, 4);
 
     expect(sim.history[0]).toBe('Simple Refine');
     expect(sim.craftDied).toBe(false);
@@ -1737,10 +1729,20 @@ describe('craft simulation — sublime crafts', () => {
     });
     const neutralOnly: CraftingConditionType[] = ['neutral'];
 
-    const sim = simulateCraft(state, config, 200, 200, neutralOnly, 80, 6, {}, {
-      completion: 100,
-      perfection: 100,
-    });
+    const sim = simulateCraft(
+      state,
+      config,
+      200,
+      200,
+      neutralOnly,
+      80,
+      6,
+      {},
+      {
+        completion: 100,
+        perfection: 100,
+      },
+    );
     expect(sim.craftDied).toBe(false);
     expect(sim.targetsMet).toBe(true);
 
@@ -1773,8 +1775,11 @@ describe('craft simulation — sublime crafts', () => {
     const input = getReplaySearchInput(snapshot);
     const stableSearchConfig = {
       ...input.searchConfig,
-      timeBudgetMs: Math.max(input.searchConfig.timeBudgetMs ?? 0, 12000),
-      maxNodes: Math.max(input.searchConfig.maxNodes ?? 0, 4000000),
+      // The 1,500-node probe follows the same stabilize/refine/fusion line as
+      // 6,000 nodes per turn. Compare fixed frontiers instead of whichever
+      // frontier a 12s deadline happens to reach under Jest.
+      timeBudgetMs: 120000,
+      maxNodes: 1500,
     };
     let state = input.state;
     const conditionTimeline: CraftingConditionType[] = [
@@ -1821,13 +1826,18 @@ describe('craft simulation — sublime crafts', () => {
       );
 
       expect(nextState).not.toBeNull();
+      expect(nextState!.stability).toBeGreaterThan(0);
       state = nextState!;
     }
 
-    // Any refine opener is valid here: the lock is "non-fusion until heat
-    // recovers", not a specific refine variant. Conjunctive band scoring can
-    // prefer delayed_refine over invasive_refine when both lower heat safely.
-    expect(chosenTypes[0]).toBe('refine');
+    // This 0.7.12-era capture now opens with stabilization: 0.7.17 recomputes
+    // technique variables after masteries, and new buff names survive the turn
+    // (RUNTIME_EVIDENCE §17.3; G:540571-540575,540622-540640,540937,541143).
+    // Forceful Stabilize retains Heightening (25%); Invasive Refine now reaches
+    // 1,907 rather than 1,617 perfection, and Delayed Refine stays at one stack
+    // rather than ticking to two. Preserve the safe non-fusion recovery contract,
+    // not the obsolete refine opener or a particular technique variant.
+    expect(chosenTypes[0]).toBe('stabilize');
     expect(chosenTypes[1]).not.toBe('fusion');
     expect(state.harmonyData?.forgeWorks?.heat).toBeLessThanOrEqual(6);
     expect(chosenTypes[2]).toBe('fusion');
@@ -2040,9 +2050,11 @@ describe('craft simulation — sublime crafts', () => {
     // Real 2-band sublime goals leave multi-turn work at stability 31, so
     // stabilize-then-progress is a valid line. The old refine-first lock came
     // from the inflated 17× multiplier model. Require a live, productive open.
-    expect(['forceful_stabilize', 'invasive_refine', 'invasive_fusion']).toContain(
-      result.recommendation!.skill.key,
-    );
+    expect([
+      'forceful_stabilize',
+      'invasive_refine',
+      'invasive_fusion',
+    ]).toContain(result.recommendation!.skill.key);
     expect(result.recommendation!.skill.actionKind).not.toBe('finish');
 
     const nextState = applySkill(
@@ -2062,9 +2074,9 @@ describe('craft simulation — sublime crafts', () => {
       expect(nextState!.stability).toBeGreaterThan(input.state.stability);
     } else {
       expect(nextState!.stability).toBeLessThan(input.state.stability);
-      expect(
-        nextState!.completion + nextState!.perfection,
-      ).toBeGreaterThan(input.state.completion + input.state.perfection);
+      expect(nextState!.completion + nextState!.perfection).toBeGreaterThan(
+        input.state.completion + input.state.perfection,
+      );
     }
   });
 

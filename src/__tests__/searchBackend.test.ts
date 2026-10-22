@@ -1,5 +1,6 @@
 import {
   BuffType,
+  CraftingState,
   FINISH_CRAFT_KEY,
   mergePartitionedResults,
   partitionRootSkillKeys,
@@ -8,10 +9,7 @@ import {
   serializeSearchInput,
   type SearchBackendInput,
 } from '../optimizer';
-import type {
-  SearchResult,
-  SkillRecommendation,
-} from '../optimizer/search';
+import type { SearchResult, SkillRecommendation } from '../optimizer/search';
 import type { SkillDefinition } from '../optimizer/skills';
 import {
   getSearchBackendStatus,
@@ -53,9 +51,9 @@ function toBackendInput(
     targetCompletion: input.targetCompletion,
     targetPerfection: input.targetPerfection,
     lookaheadDepth: input.lookaheadDepth,
-    currentCondition: input.currentCondition as SearchBackendInput['currentCondition'],
-    forecast:
-      input.forecastConditions as SearchBackendInput['forecast'],
+    currentCondition:
+      input.currentCondition as SearchBackendInput['currentCondition'],
+    forecast: input.forecastConditions as SearchBackendInput['forecast'],
     searchConfig: {
       ...(input.searchConfig as Record<string, unknown>),
       ...searchConfigOverride,
@@ -64,6 +62,47 @@ function toBackendInput(
 }
 
 describe('searchBackend wire format', () => {
+  it.each([15.5, 100])(
+    'preserves every state field, including %s%% reduction, through a worker hop',
+    (qiCostReduction) => {
+      const input = toBackendInput(
+        'forge-heat-runway-step-3.snapshot.json',
+        {},
+      );
+      input.state = new CraftingState({
+        ...input.state,
+        qiDroplets: 3,
+        maxQiDroplets: 7,
+        itemEffectiveness: 25,
+        qiCostReduction,
+        qiCostPenalty: 25,
+        stabilityCostReduction: 32.5,
+        stabilityCostPenalty: 40,
+        harmonyData: {
+          recommendedTechniqueTypes: [],
+          returningCycle: {
+            charges: 3,
+            storedQi: 4.5,
+            chargeSize: 19.4,
+            pulseKey: 7,
+            lastOutcome: 'charge',
+          },
+        },
+        nativeVariables: { custom_live_stat: 42, charismaMultiplier: 1.25 },
+        history: ['previous action'],
+      });
+      const plain = serializeSearchInput(input);
+      const revived = reviveSearchInput(JSON.parse(JSON.stringify(plain)));
+      // Check the whole field roster, not a list that can become stale with the
+      // serializer. Only the memoized, derived cache key is intentionally omitted.
+      const original = input.state as unknown as Record<string, unknown>;
+      const restored = revived.state as unknown as Record<string, unknown>;
+      const keys = Object.keys(original).filter((key) => key !== '_cacheKey');
+      expect(Object.keys(plain.state).sort()).toEqual([...keys].sort());
+      for (const key of keys) expect(restored[key]).toEqual(original[key]);
+    },
+  );
+
   // Node-bounded so both runs explore the identical frontier: the contract is
   // that the wire round-trip changes nothing, not machine speed or depth.
   const PARITY_BUDGET = { timeBudgetMs: 120000, maxNodes: 500 };
@@ -79,9 +118,7 @@ describe('searchBackend wire format', () => {
       const plain = serializeSearchInput(input);
       expect(plain.searchConfig.transpositionCache).toBeUndefined();
       expect(plain.searchConfig.shouldAbort).toBeUndefined();
-      const revived = reviveSearchInput(
-        JSON.parse(JSON.stringify(plain)),
-      );
+      const revived = reviveSearchInput(JSON.parse(JSON.stringify(plain)));
       const overTheWire = runSearchBackendInput(revived);
 
       expect(overTheWire.recommendation?.skill.key).toBe(
@@ -90,12 +127,12 @@ describe('searchBackend wire format', () => {
       expect(overTheWire.recommendation?.score).toBe(
         direct.recommendation?.score,
       );
-      expect(
-        overTheWire.alternativeSkills.map((alt) => alt.skill.key),
-      ).toEqual(direct.alternativeSkills.map((alt) => alt.skill.key));
-      expect(
-        overTheWire.alternativeSkills.map((alt) => alt.score),
-      ).toEqual(direct.alternativeSkills.map((alt) => alt.score));
+      expect(overTheWire.alternativeSkills.map((alt) => alt.skill.key)).toEqual(
+        direct.alternativeSkills.map((alt) => alt.skill.key),
+      );
+      expect(overTheWire.alternativeSkills.map((alt) => alt.score)).toEqual(
+        direct.alternativeSkills.map((alt) => alt.score),
+      );
       expect(overTheWire.isTerminal).toBe(direct.isTerminal);
       expect(overTheWire.targetsMet).toBe(direct.targetsMet);
     },
@@ -156,10 +193,7 @@ describe('mergePartitionedResults', () => {
     };
   }
 
-  function makeCandidate(
-    key: string,
-    score: number,
-  ): SkillRecommendation {
+  function makeCandidate(key: string, score: number): SkillRecommendation {
     const emptyGains = { completion: 0, perfection: 0, stability: 0 };
     return {
       skill: makeSkill(key),

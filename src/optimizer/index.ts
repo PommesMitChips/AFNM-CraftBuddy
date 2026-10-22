@@ -90,6 +90,8 @@ export type {
 export {
   processHarmonyEffect,
   initHarmonyData,
+  resolveReturningCycleData,
+  RETURNED_PRECISION,
   getHarmonyStatModifiers,
   getHarmonyCostMultipliers,
   clampForgeHeat,

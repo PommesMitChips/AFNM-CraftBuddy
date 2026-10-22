@@ -3,8 +3,8 @@ title: Optimizer Engine Findings
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.10-9bf9078
-last_verified: 2026-09-01
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
 source_of_truth: crates/craftbuddy-engine/*, src/optimizer/nativeMcts.ts, src/optimizer/search.ts, src/settings/index.ts, scripts/optimizer/benchmark-engines.ts
 review_cycle_days: 30
 related_files:
@@ -16,17 +16,29 @@ related_files:
 
 # Optimizer Engine Findings
 
-What is actually true about the Rust/WASM engine, current target AFNM **0.7.10**, and which candidate improvements have already been measured and rejected. Read this before proposing engine work.
+What is actually true about the Rust/WASM engine, current target AFNM **0.7.17**, and which candidate improvements have already been measured and rejected. Read this before proposing engine work.
 
 Raw measurements, reproduction commands and the profiling harness live in `docs/project/ENGINE_PERFORMANCE.md`. This file is the decision record.
 
 ## Current state
 
+**6.8.0 review:** both engines now include 0.7.17 cost channels, droplets,
+mastery/payment phases, pre-action-name buff ticks and Returning Cycle. The
+recorded v4 corpus has 177 scenarios / 1,554 cases: 1,352 legal transitions
+agree, and 202 illegal cases are rejected. The measurements and gate counts
+in the older sections below remain scoped to their original releases.
+In particular, the old resonance runner-up `mustRankBefore` clause is no
+longer active: runtime-correct buff timing explained the new inversion;
+the prohibition on recommending Explosive Fusion remains. Heat-one retains
+its assertions at an approved 6,000-node fixture budget. No scoring constants
+changed. Current throughput evidence (~0.58 vs HEAD ~0.41 ms/node) is in
+`ENGINE_PERFORMANCE.md`.
+
 | Question | Answer |
 | --- | --- |
 | Does Rust model the same mechanics as TypeScript? | **Yes.** Effect trees, generic active buffs, mastery, Soulflame triggers and stack consumption, toxicity, and pill/reagent actions all live in `crates/craftbuddy-engine/src/effects.rs`; `outcome.rs` mirrors the conjunctive outcome model. |
 | Does Rust see the same action space? | **Yes.** `buildNativeMctsInput` no longer filters `actionKind !== 'item'`, and serialises effects, mastery, granted buffs, buff gates, `items`, `consumedPillsThisTurn` and buffs. |
-| Is that parity proven? | **Yes** — 134 scenarios / 1,432 transitions in the differential corpus, asserted on both sides, plus the Rust unit suite (64 passing tests, 3 `#[ignore]`d long-running profiles) covering the ported mechanics. |
+| Is that parity proven? | **Yes** — 177 scenarios / 1,554 cases, with 1,352 legal transitions and 202 illegal-action checks asserted on both sides. Current release results are in `RELEASE_NOTES_6.8.0.md`; 3 profiling harnesses remain intentionally ignored. |
 | Is Rust the authority for recommendations? | **No, deliberately.** It supplies a root MCTS policy prior for near-tie ordering. TypeScript owns final ranking and stays the differential oracle and the no-WASM fallback. |
 | Is the recommendation deterministic? | **Yes**, and now directly tested (`differential_tests::mcts_search_is_deterministic`). It was not before 0.7.5. |
 

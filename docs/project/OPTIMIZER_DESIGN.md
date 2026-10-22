@@ -3,8 +3,8 @@ title: Optimizer Design
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.6-7c586da
-last_verified: 2026-08-23
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
 source_of_truth: src/optimizer/outcome.ts, src/optimizer/search.ts, src/optimizer/skills.ts, src/optimizer/state.ts, src/optimizer/harmony.ts, src/optimizer/index.ts, src/optimizer/nativeMcts.ts, crates/craftbuddy-engine/*, src/settings/index.ts
 review_cycle_days: 30
 related_files:
@@ -17,7 +17,7 @@ related_files:
 
 # Optimizer Design
 
-How CraftBuddy decides what to do next in AFNM **0.7.6**. Use `.agents/skills/craftbuddy-optimizer/SKILL.md` for the action checklist; this is the reference.
+How CraftBuddy decides what to do next in AFNM **0.7.17**. Use `.agents/skills/craftbuddy-optimizer/SKILL.md` for the action checklist; this is the reference.
 
 ## Module boundary
 
@@ -29,7 +29,8 @@ How CraftBuddy decides what to do next in AFNM **0.7.6**. Use `.agents/skills/cr
 | `state.ts` | immutable `CraftingState`, generic `TrackedBuff` set, cache-key generation |
 | `gameTypes.ts` | game-aligned types and shared formulas (`evaluateScaling`, expression evaluator, condition parsing, crit EV, `getBonusAndChance`) |
 | `skills.ts` | transition engine (`calculateSkillGains`, `applySkill`, `canApplySkill`), masteries, buffs, harmony application |
-| `harmony.ts` + `harmonyRegistry.ts` | the seven harmony subsystems and their static data, including the 0.7.6 per-bar-change Eccentric Decree fold |
+| `costStats.ts` | independent zero-based cost-channel composition and cost flooring |
+| `harmony.ts` + `harmonyRegistry.ts` | the nine harmony subsystems and their static data, including per-bar Decree, Captivating Cadence and Returning Cycle |
 | `search.ts` | move ordering, bounded lookahead, scoring, `OutcomeProjection` |
 | `nativeMcts.ts` | the bridge to the Rust engine |
 
@@ -70,11 +71,19 @@ UI wording is "will auto-finish", never "you can finish crafting now".
 ## State and actions
 
 - Immutable `CraftingState` with a deterministic cache key; tracked buffs are cloned defensively at the boundary.
-- Buffs are a generic set of `TrackedBuff { key, stacks, duration, definition }`. The two legacy scalar `control/intensityBuffTurns` counters remain only as a fast path for simple turn-based buffs; **new effects must not use them**, or they double-apply against the definition-driven path.
+- Buffs are a generic set of `TrackedBuff { key, stacks, duration, definition, internalState }`. The two legacy scalar `control/intensityBuffTurns` counters remain only as a fast path for simple turn-based buffs; **new effects must not use them**, or they double-apply against the definition-driven path.
 - Actions: crafting techniques plus item (pill/reagent) actions supplied by the integration layer. Item actions do not consume lookahead turn depth.
 - Integration seeds only canonical supplemental `nativeVariables`; state, buff and harmony mirrors are re-derived on demand instead of being persisted into cache keys.
 - When the native crafting auto-use loadout covers an item, that item is removed from the action space by the integration layer, so search never proposes a consumption the game is about to perform itself.
-- For a **sublime Eccentric Decree** craft only, a turn's transition also carries the ordered per-application bar changes that harmony's 0.7.6 `onBarChange` hook scores. `needsBarContributions()` gates this, so no event list is allocated for the other six harmonies (`docs/project/MECHANICS_PARITY.md` for the model and its known limits).
+- For a **sublime Eccentric Decree** craft only, a turn's transition also carries the ordered per-application bar changes that harmony's `onBarChange` hook scores. `needsBarContributions()` gates this, so no event list is allocated for the other eight harmonies (`docs/project/MECHANICS_PARITY.md` for the model and its known limits).
+
+### 0.7.17 transition order
+
+Pay toxicity, droplets and buff costs; capture success chance; execute effect masteries; recompute/pay Qi and stability; apply successful technique effects. Then tick type-specific and ordinary effects only for buff names present before the action, resolve harmony with reported payment, advance the condition and perform normal decay/cap/floor cleanup. New buff names survive without an immediate tick; an existing name refreshed by the action still ticks. Cost reductions and penalties are independent zero-based multiplicative channels, not generic stat additions (`costStats.ts`).
+
+Chance-conditioned payment effects use transient, independent payment branches to get the current-action expected payment right. They do not add recursive search branches or a probability-aware future-buff model. The existing survivability guard remains separate from EV.
+
+Returning Cycle holds a fixed starting `chargeSize`, accrues reported Qi payment even on failure, drains charges before stabilization releases them, and adds ordinary Returned Precision (+1 crit point/stack, decaying on later actions). It earns value through simulated future outcomes, with no new flat score or forced Stabilize recommendation. Details and remaining approximations are in `MECHANICS_PARITY.md`.
 
 ## Search
 
@@ -176,7 +185,7 @@ Published per-action gains (`expectedGains`) are derived from the **simulated po
 
 ## Rust/WASM engine
 
-The Rust engine models the **same searchable action space** as TypeScript — generic buffs, effect trees, mastery, Soulflame, toxicity, item actions — and shares the conjunctive outcome model via `crates/craftbuddy-engine/src/outcome.rs`. Parity is proven by a 137-scenario / 1,471-transition differential corpus (`docs/project/MECHANICS_PARITY.md`).
+The Rust engine models the **same searchable action space** as TypeScript — generic buffs, effect trees, mastery, Soulflame, toxicity, item actions — and shares the conjunctive outcome model via `crates/craftbuddy-engine/src/outcome.rs`. The differential corpus has 177 scenarios / 1,554 cases: 1,352 legal transitions and 202 illegal-action checks (`docs/project/MECHANICS_PARITY.md`).
 
 Its role in a search is still a **root policy prior**, by design:
 

@@ -6,6 +6,11 @@
  */
 
 import { BuffDefinition, HarmonyData, ScalingVariables } from './gameTypes';
+import { costMultiplier } from './costStats';
+
+function legacyCost(value: number | undefined): number {
+  return value === undefined || value === 0 ? 100 : value;
+}
 
 function stableStringify(value: unknown): string {
   if (value === null || value === undefined) return '';
@@ -47,6 +52,7 @@ function cloneHarmonyData(hd: HarmonyData): HarmonyData {
   if (hd.eccentricDecree) clone.eccentricDecree = { ...hd.eccentricDecree };
   if (hd.captivatingCadence)
     clone.captivatingCadence = { ...hd.captivatingCadence };
+  if (hd.returningCycle) clone.returningCycle = { ...hd.returningCycle };
   if (hd.additionalData !== undefined) {
     clone.additionalData = JSON.parse(
       JSON.stringify(hd.additionalData),
@@ -55,7 +61,13 @@ function cloneHarmonyData(hd: HarmonyData): HarmonyData {
   return clone;
 }
 
+const ownedTrackedBuffs = new WeakSet<TrackedBuff>();
+const ownedNativeVariables = new WeakSet<Record<string, number>>();
+
 function cloneTrackedBuff(buff: TrackedBuff): TrackedBuff {
+  // These records (including internalState) were frozen by this function.
+  // Reusing them keeps branch isolation without cloning them at every phase.
+  if (ownedTrackedBuffs.has(buff)) return buff;
   const cloned: TrackedBuff = {
     name: buff.name,
     stacks: buff.stacks,
@@ -67,6 +79,7 @@ function cloneTrackedBuff(buff: TrackedBuff): TrackedBuff {
     // one search branch never leak into another.
     cloned.internalState = Object.freeze({ ...buff.internalState });
   }
+  ownedTrackedBuffs.add(cloned);
   return Object.freeze(cloned);
 }
 
@@ -84,12 +97,14 @@ function cloneNativeVariables(
   source: Record<string, number> | undefined,
 ): Record<string, number> | undefined {
   if (!source) return undefined;
+  if (ownedNativeVariables.has(source)) return source;
   const cloned: Record<string, number> = {};
   for (const [key, value] of Object.entries(source)) {
     if (typeof value === 'number' && Number.isFinite(value)) {
       cloned[key] = value;
     }
   }
+  ownedNativeVariables.add(cloned);
   return Object.freeze(cloned) as Record<string, number>;
 }
 
@@ -118,7 +133,15 @@ export interface TrackedBuff {
 }
 
 export interface CraftingStateData {
+  /** Additive item-scaling stat; neutral is 0, not 100. */
+  itemEffectiveness: number;
   qi: number;
+  qiDroplets: number;
+  maxQiDroplets: number;
+  qiCostReduction: number;
+  qiCostPenalty: number;
+  stabilityCostReduction: number;
+  stabilityCostPenalty: number;
   stability: number;
   /** Initial max stability from recipe */
   initialMaxStability: number;
@@ -194,7 +217,14 @@ export interface CraftingStateData {
  * Now game-accurate with proper buff tracking and completion bonus system.
  */
 export class CraftingState implements CraftingStateData {
+  readonly itemEffectiveness: number;
   readonly qi: number;
+  readonly qiDroplets: number;
+  readonly maxQiDroplets: number;
+  readonly qiCostReduction: number;
+  readonly qiCostPenalty: number;
+  readonly stabilityCostReduction: number;
+  readonly stabilityCostPenalty: number;
   readonly stability: number;
   readonly initialMaxStability: number;
   readonly stabilityPenalty: number;
@@ -228,7 +258,24 @@ export class CraftingState implements CraftingStateData {
   private _cacheKey?: string;
 
   constructor(data: Partial<CraftingStateData> = {}) {
+    this.itemEffectiveness = data.itemEffectiveness ?? 0;
     this.qi = data.qi ?? 0;
+    this.qiDroplets = data.qiDroplets ?? 0;
+    this.maxQiDroplets = data.maxQiDroplets ?? 0;
+    // Old snapshot inputs remain readable; live extraction uses only the four
+    // 0.7.17 channels. Percentage properties below are compatibility views.
+    this.qiCostReduction =
+      data.qiCostReduction ??
+      Math.max(0, 100 - legacyCost(data.poolCostPercentage));
+    this.qiCostPenalty =
+      data.qiCostPenalty ??
+      Math.max(0, legacyCost(data.poolCostPercentage) - 100);
+    this.stabilityCostReduction =
+      data.stabilityCostReduction ??
+      Math.max(0, 100 - legacyCost(data.stabilityCostPercentage));
+    this.stabilityCostPenalty =
+      data.stabilityCostPenalty ??
+      Math.max(0, legacyCost(data.stabilityCostPercentage) - 100);
     this.stability = data.stability ?? 0;
     this.initialMaxStability = data.initialMaxStability ?? 60;
     this.stabilityPenalty = data.stabilityPenalty ?? 0;
@@ -238,8 +285,11 @@ export class CraftingState implements CraftingStateData {
     this.critMultiplier = data.critMultiplier ?? 150; // 150% = 1.5x multiplier
     this.successChanceBonus = data.successChanceBonus ?? 0;
     this.poolCostFlat = data.poolCostFlat ?? 0;
-    this.poolCostPercentage = data.poolCostPercentage ?? 100;
-    this.stabilityCostPercentage = data.stabilityCostPercentage ?? 100;
+    this.poolCostPercentage =
+      costMultiplier(this.qiCostReduction, this.qiCostPenalty) * 100;
+    this.stabilityCostPercentage =
+      costMultiplier(this.stabilityCostReduction, this.stabilityCostPenalty) *
+      100;
     this.controlBuffTurns = data.controlBuffTurns ?? 0;
     this.intensityBuffTurns = data.intensityBuffTurns ?? 0;
     this.controlBuffMultiplier = data.controlBuffMultiplier ?? 1.4;
@@ -279,7 +329,30 @@ export class CraftingState implements CraftingStateData {
     const newInitialMaxStability =
       overrides.initialMaxStability ?? this.initialMaxStability;
     return new CraftingState({
+      itemEffectiveness: overrides.itemEffectiveness ?? this.itemEffectiveness,
       qi: overrides.qi ?? this.qi,
+      qiDroplets: overrides.qiDroplets ?? this.qiDroplets,
+      maxQiDroplets: overrides.maxQiDroplets ?? this.maxQiDroplets,
+      qiCostReduction:
+        overrides.qiCostReduction ??
+        (overrides.poolCostPercentage !== undefined
+          ? Math.max(0, 100 - legacyCost(overrides.poolCostPercentage))
+          : this.qiCostReduction),
+      qiCostPenalty:
+        overrides.qiCostPenalty ??
+        (overrides.poolCostPercentage !== undefined
+          ? Math.max(0, legacyCost(overrides.poolCostPercentage) - 100)
+          : this.qiCostPenalty),
+      stabilityCostReduction:
+        overrides.stabilityCostReduction ??
+        (overrides.stabilityCostPercentage !== undefined
+          ? Math.max(0, 100 - legacyCost(overrides.stabilityCostPercentage))
+          : this.stabilityCostReduction),
+      stabilityCostPenalty:
+        overrides.stabilityCostPenalty ??
+        (overrides.stabilityCostPercentage !== undefined
+          ? Math.max(0, legacyCost(overrides.stabilityCostPercentage) - 100)
+          : this.stabilityCostPenalty),
       stability: overrides.stability ?? this.stability,
       initialMaxStability: newInitialMaxStability,
       stabilityPenalty: overrides.stabilityPenalty ?? this.stabilityPenalty,
@@ -488,8 +561,8 @@ export class CraftingState implements CraftingStateData {
 
     // Include cost modifiers
     const poolCostFlatKey = this.poolCostFlat;
-    const poolCostKey = this.poolCostPercentage;
-    const stabCostKey = this.stabilityCostPercentage;
+    const poolCostKey = `${this.qiCostReduction}:${this.qiCostPenalty}:${this.qiDroplets}:${this.maxQiDroplets}`;
+    const stabCostKey = `${this.stabilityCostReduction}:${this.stabilityCostPenalty}:${this.itemEffectiveness}`;
 
     // Include completion bonus stacks (0.7.10: +10 Perfection Boost each)
     const compBonusKey = this.completionBonus;
@@ -515,6 +588,13 @@ export class CraftingState implements CraftingStateData {
  * Options for creating a CraftingState from game data.
  */
 export interface CreateStateOptions {
+  itemEffectiveness?: number;
+  qiDroplets?: number;
+  maxQiDroplets?: number;
+  qiCostReduction?: number;
+  qiCostPenalty?: number;
+  stabilityCostReduction?: number;
+  stabilityCostPenalty?: number;
   pool: number;
   stability: number;
   initialMaxStability: number;
@@ -549,7 +629,14 @@ export interface CreateStateOptions {
  */
 export function createStateFromGame(opts: CreateStateOptions): CraftingState {
   return new CraftingState({
+    itemEffectiveness: opts.itemEffectiveness,
     qi: opts.pool,
+    qiDroplets: opts.qiDroplets,
+    maxQiDroplets: opts.maxQiDroplets,
+    qiCostReduction: opts.qiCostReduction,
+    qiCostPenalty: opts.qiCostPenalty,
+    stabilityCostReduction: opts.stabilityCostReduction,
+    stabilityCostPenalty: opts.stabilityCostPenalty,
     stability: opts.stability,
     initialMaxStability: opts.initialMaxStability,
     stabilityPenalty: opts.stabilityPenalty ?? 0,
@@ -598,11 +685,17 @@ export function buildScalingVariables(
     critchance: state.critChance,
     critmultiplier: state.critMultiplier,
     pool: state.qi,
+    qiDroplets: state.qiDroplets,
+    maxqiDroplets: state.maxQiDroplets,
+    qiCostReduction: state.qiCostReduction,
+    qiCostPenalty: state.qiCostPenalty,
+    stabilityCostReduction: state.stabilityCostReduction,
+    stabilityCostPenalty: state.stabilityCostPenalty,
     maxpool: maxPool,
     toxicity: state.toxicity,
     maxtoxicity: state.maxToxicity,
     resistance: 0,
-    itemEffectiveness: 100,
+    itemEffectiveness: state.itemEffectiveness,
     pillsPerRound: 1,
     poolCostFlat: state.poolCostFlat,
     poolCostPercentage: state.poolCostPercentage,

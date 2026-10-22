@@ -21,10 +21,7 @@ import {
   applySkill,
   getBuffDiscordantConditions,
 } from '../optimizer/skills';
-import {
-  BuffDefinition,
-  getBonusAndChance,
-} from '../optimizer/gameTypes';
+import { BuffDefinition, getBonusAndChance } from '../optimizer/gameTypes';
 import { normalizeForecastConditionQueue } from '../optimizer/search';
 
 function createTestConfig(
@@ -199,7 +196,9 @@ describe('0.7.8 sealedMaxStability (Illume Crucible)', () => {
       skill,
       config,
     );
-    expect(unsealed?.stabilityPenalty).toBe(0);
+    // Restoration runs during effects; cleanup decay follows harmony.
+    // RUNTIME_EVIDENCE §17.3, G:540929-541022.
+    expect(unsealed?.stabilityPenalty).toBe(1);
 
     // Sealed: the full restore is dropped and the per-action decay still runs.
     const sealed = applySkill(
@@ -291,9 +290,14 @@ describe('0.7.7 triggeredEffects + setState (True Bifang Flame)', () => {
       effects: [{ kind: 'completion', amount: { value: 50 } } as never],
     });
     const next = applySkill(
-      stateWithBuff('true_bifang_flame', trueBifangDefinition(), { blaze: 0 }, {
-        completion: 90,
-      }),
+      stateWithBuff(
+        'true_bifang_flame',
+        trueBifangDefinition(),
+        { blaze: 0 },
+        {
+          completion: 90,
+        },
+      ),
       skill,
       config,
       [],

@@ -3,8 +3,8 @@ title: Architecture
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.6-7c586da
-last_verified: 2026-08-23
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
 source_of_truth: src/mod.ts, src/modContent/*, src/optimizer/*, crates/craftbuddy-engine/*, src/ui/*, src/settings/*, src/utils/*
 review_cycle_days: 30
 related_files:
@@ -18,7 +18,7 @@ related_files:
 ## Layers
 
 ```text
-AFNM 0.7.6 runtime  ──►  src/modContent/*  ──►  src/optimizer (facade)  ──►  search + Rust engine
+AFNM 0.7.17 runtime ──►  src/modContent/*  ──►  src/optimizer (facade)  ──►  search + Rust engine
                                 │                        │
                                 └──►  src/ui/*  ◄─────────┘  (via SearchResult.outcomeProjection)
 ```
@@ -38,9 +38,10 @@ Four rules define the shape:
 | `outcome.ts` | conjunctive outcome model: band widths, `TIER_REQUIREMENTS`, `willAutoFinish` |
 | `search.ts` | move ordering, bounded lookahead, scoring, `OutcomeProjection`, `setupFor` hints |
 | `skills.ts` | transition engine: gains, legality, masteries, buff effects, harmony application |
+| `costStats.ts` | independent zero-based reduction/penalty cost-channel arithmetic |
 | `state.ts` | immutable `CraftingState`, generic tracked buffs, cache keys |
 | `gameTypes.ts` | game-aligned types and shared formulas (scaling, expressions, conditions, crit EV, `getBonusAndChance`) |
-| `harmony.ts` | deterministic simulation of all seven harmony subsystems |
+| `harmony.ts` | deterministic simulation of all nine harmony subsystems, including Returning Cycle |
 | `harmonyRegistry.ts` | static per-harmony data: complexity multiplier, starting harmony, cost/pinning flags |
 | `nativeVariables.ts` | canonical native-variable storage and re-derivation of buff/harmony aliases |
 | `nameNormalization.ts` | memoized identifier normalization used across state keys and lookups |
@@ -126,7 +127,7 @@ Presentation logic that needs testing goes into `src/utils/*` with a plain Jest 
 ## Runtime lifecycle
 
 1. Detect the craft from root state (`screen.screen === 'recipe'` plus a live crafting slice).
-2. Convert live payloads into optimizer config/state/actions: harmony selection and hydration, complexity-multiplied targets, canonical native variables, available techniques, quick-access items minus anything the native auto-use loadout covers.
+2. Convert live payloads into optimizer config/state/actions: harmony selection and hydration (including fixed Returning Cycle charge size), droplets/cost channels, separate mastery entries, complexity-multiplied targets, canonical native variables, available techniques, quick-access items minus anything the native auto-use loadout covers.
 3. Optionally request a Rust MCTS root policy (Experimental engine, large or sublime craft, inline WASM available).
 4. Run the search; attach the `OutcomeProjection`.
 5. Sync auto mode: resolve the effective policy, publish a snapshot carrying the `craftStateRevision` and a `verifyRevision()` callback.

@@ -26,6 +26,8 @@ import {
   EnhancingEchoData,
   EccentricDecreeData,
   CaptivatingCadenceData,
+  ReturningCycleData,
+  BuffDefinition,
   getBonusAndChance,
 } from './gameTypes';
 import { FORMLESS_HARMONY } from './harmonyRegistry';
@@ -44,6 +46,8 @@ export interface HarmonyEffectResult {
   stabilityDelta: number;
   /** Direct pool (qi) change (Inscription / Eccentric Decree penalty) */
   poolDelta: number;
+  /** Ordinary buff stacks granted after existing buffs have ticked. */
+  precisionStacksAdded?: number;
   /** Direct stability penalty increase (Inscription penalty) */
   stabilityPenaltyDelta: number;
   /**
@@ -89,6 +93,10 @@ export interface BarChangeEvent {
  * against the recipe targets to decide when the focus flips.
  */
 export interface HarmonyProcessContext {
+  /** Reported action payment, not net pool loss (also present on failure). */
+  poolCost?: number;
+  /** Raw starting stats.maxpool, never the buffed action maximum. */
+  startingMaxPool?: number;
   /** Completion after the action resolved. */
   completion: number;
   /** Perfection after the action resolved. */
@@ -201,7 +209,9 @@ function forgeHeatUpdatesBuff(heat: number): boolean {
  * buff in place. In practice heat 1 is only reachable from heat 2, so this
  * usually means the low-control penalty persists rather than clearing.
  */
-export function getEffectiveForgeHeat(data: ForgeWorksData | undefined): number {
+export function getEffectiveForgeHeat(
+  data: ForgeWorksData | undefined,
+): number {
   const heat = clampForgeHeat(data?.heat ?? 0);
   if (forgeHeatUpdatesBuff(heat)) {
     return heat;
@@ -280,7 +290,11 @@ function processForgeWorks(
   const recommended = getForgeRecommendedTechniqueTypes(fw.heat);
 
   return {
-    harmonyData: { ...harmonyData, forgeWorks: fw, recommendedTechniqueTypes: recommended },
+    harmonyData: {
+      ...harmonyData,
+      forgeWorks: fw,
+      recommendedTechniqueTypes: recommended,
+    },
     harmonyDelta,
     statModifiers: getForgeWorksStatModifiers(getEffectiveForgeHeat(fw)),
     stabilityDelta: 0,
@@ -299,12 +313,30 @@ interface AlchemicalCombo {
 }
 
 const ALCHEMICAL_COMBOS: AlchemicalCombo[] = [
-  { charges: ['fusion', 'refine', 'support'], modifiers: { stabilityCostPercentage: 75 } },
-  { charges: ['fusion', 'refine', 'refine'], modifiers: { intensityMultiplier: 1.25 } },
-  { charges: ['fusion', 'fusion', 'refine'], modifiers: { controlMultiplier: 1.25 } },
-  { charges: ['fusion', 'refine', 'stabilize'], modifiers: { critChanceBonus: 25 } },
-  { charges: ['refine', 'refine', 'support'], modifiers: { poolCostPercentage: 75 } },
-  { charges: ['refine', 'stabilize', 'support'], modifiers: { successChanceBonus: 0.25 } },
+  {
+    charges: ['fusion', 'refine', 'support'],
+    modifiers: { stabilityCostPercentage: 75 },
+  },
+  {
+    charges: ['fusion', 'refine', 'refine'],
+    modifiers: { intensityMultiplier: 1.25 },
+  },
+  {
+    charges: ['fusion', 'fusion', 'refine'],
+    modifiers: { controlMultiplier: 1.25 },
+  },
+  {
+    charges: ['fusion', 'refine', 'stabilize'],
+    modifiers: { critChanceBonus: 25 },
+  },
+  {
+    charges: ['refine', 'refine', 'support'],
+    modifiers: { poolCostPercentage: 75 },
+  },
+  {
+    charges: ['refine', 'stabilize', 'support'],
+    modifiers: { successChanceBonus: 0.25 },
+  },
 ];
 
 function getNextValidChargeTypes(charges: TechniqueType[]): TechniqueType[] {
@@ -323,7 +355,7 @@ function getNextValidChargeTypes(charges: TechniqueType[]): TechniqueType[] {
       comboCharges.splice(index, 1);
     }
     if (!missingCharge) {
-      comboCharges.forEach(c => validNext.add(c));
+      comboCharges.forEach((c) => validNext.add(c));
     }
   }
   return Array.from(validNext).sort();
@@ -334,12 +366,17 @@ function processAlchemicalArts(
   techniqueType: TechniqueType,
 ): HarmonyEffectResult {
   const aa: AlchemicalArtsData = harmonyData.alchemicalArts
-    ? { charges: [...harmonyData.alchemicalArts.charges], lastCombo: [...harmonyData.alchemicalArts.lastCombo] }
+    ? {
+        charges: [...harmonyData.alchemicalArts.charges],
+        lastCombo: [...harmonyData.alchemicalArts.lastCombo],
+      }
     : { charges: [], lastCombo: [] };
   const additionalData: Record<string, unknown> = harmonyData.additionalData
     ? { ...harmonyData.additionalData }
     : {};
-  const existingReaction = additionalData.alchemicalReactionModifiers as Partial<HarmonyStatModifiers> | undefined;
+  const existingReaction = additionalData.alchemicalReactionModifiers as
+    | Partial<HarmonyStatModifiers>
+    | undefined;
 
   aa.charges.push(techniqueType);
   aa.charges.sort();
@@ -368,7 +405,7 @@ function processAlchemicalArts(
   // 3 charges accumulated -- check combo
   const chargesKey = aa.charges.slice(-3).join(',');
   const matchingCombo = ALCHEMICAL_COMBOS.find(
-    combo => [...combo.charges].sort().join(',') === chargesKey
+    (combo) => [...combo.charges].sort().join(',') === chargesKey,
   );
 
   if (matchingCombo) {
@@ -383,7 +420,10 @@ function processAlchemicalArts(
 
   aa.lastCombo = aa.charges.slice(-3);
   aa.charges = [];
-  additionalData.alchemicalReactionModifiers = nextReaction as Record<string, unknown>;
+  additionalData.alchemicalReactionModifiers = nextReaction as Record<
+    string,
+    unknown
+  >;
 
   return {
     harmonyData: {
@@ -404,7 +444,13 @@ function processAlchemicalArts(
 // Inscribed Patterns
 // ============================================================
 
-export const INSCRIBED_PATTERN_BLOCK: TechniqueType[] = ['stabilize', 'support', 'fusion', 'refine', 'refine'];
+export const INSCRIBED_PATTERN_BLOCK: TechniqueType[] = [
+  'stabilize',
+  'support',
+  'fusion',
+  'refine',
+  'refine',
+];
 
 function processInscribedPatterns(
   harmonyData: HarmonyData,
@@ -416,7 +462,11 @@ function processInscribedPatterns(
         completedBlocks: harmonyData.inscribedPatterns.completedBlocks,
         stacks: harmonyData.inscribedPatterns.stacks,
       }
-    : { currentBlock: [...INSCRIBED_PATTERN_BLOCK], completedBlocks: 0, stacks: 0 };
+    : {
+        currentBlock: [...INSCRIBED_PATTERN_BLOCK],
+        completedBlocks: 0,
+        stacks: 0,
+      };
 
   const techniqueIndex = ip.currentBlock.indexOf(techniqueType);
   let harmonyDelta = 0;
@@ -526,7 +576,11 @@ function processResonance(
   const recommended: TechniqueType[] = res.resonance ? [res.resonance] : [];
 
   return {
-    harmonyData: { ...harmonyData, resonance: res, recommendedTechniqueTypes: recommended },
+    harmonyData: {
+      ...harmonyData,
+      resonance: res,
+      recommendedTechniqueTypes: recommended,
+    },
     harmonyDelta,
     statModifiers,
     stabilityDelta,
@@ -783,7 +837,10 @@ function processCaptivatingCadence(
   let stabilityPenaltyDelta = 0;
   let lastOutcome: 'build' | 'break';
 
-  if (current.lastAction !== undefined && current.lastAction === techniqueType) {
+  if (
+    current.lastAction !== undefined &&
+    current.lastAction === techniqueType
+  ) {
     chain = 0;
     lastOutcome = 'break';
     harmonyDelta = -50;
@@ -832,6 +889,79 @@ function processCaptivatingCadence(
 // Public API
 // ============================================================
 
+export const RETURNED_PRECISION: BuffDefinition = {
+  name: 'Returned Precision',
+  canStack: true,
+  stats: { critchance: { value: 1, scaling: 'stacks' } },
+  effects: [{ kind: 'addStack', stacks: { value: -1 } }],
+};
+
+export function resolveReturningCycleData(
+  data: ReturningCycleData | undefined,
+  startingMaxPool: number,
+): ReturningCycleData {
+  if (
+    data &&
+    Number.isFinite(data.charges) &&
+    Number.isFinite(data.storedQi) &&
+    Number.isFinite(data.chargeSize) &&
+    data.chargeSize > 0
+  ) {
+    return { ...data };
+  }
+  return {
+    charges: 0,
+    storedQi: 0,
+    chargeSize: Math.max(1, startingMaxPool * 0.1),
+  };
+}
+
+function processReturningCycle(
+  harmonyData: HarmonyData,
+  techniqueType: TechniqueType,
+  context?: HarmonyProcessContext,
+): HarmonyEffectResult {
+  const cycle = resolveReturningCycleData(
+    harmonyData.returningCycle,
+    context?.startingMaxPool ?? 0,
+  );
+  cycle.pulseKey = (cycle.pulseKey ?? 0) + 1;
+  cycle.storedQi += Math.max(0, context?.poolCost ?? 0);
+  const earned = Math.floor(
+    (cycle.storedQi + cycle.chargeSize * 1e-9) / cycle.chargeSize,
+  );
+  cycle.lastOutcome = earned > 0 ? 'charge' : 'drain';
+  if (earned > 0) {
+    cycle.charges += earned;
+    cycle.storedQi = Math.max(0, cycle.storedQi - earned * cycle.chargeSize);
+  }
+  const held = cycle.charges;
+  let harmonyDelta = held > 0 ? -3 * held : 0;
+  const poolDelta = held > 0 ? -held * cycle.chargeSize * (0.03 / 0.1) : 0;
+  let precisionStacksAdded = 0;
+  if (techniqueType === 'stabilize') {
+    cycle.charges = 0;
+    cycle.lastOutcome = 'release';
+    if (held > 0) {
+      harmonyDelta += 10 * held;
+      precisionStacksAdded = 5 * held;
+    }
+  }
+  return {
+    harmonyData: {
+      ...harmonyData,
+      returningCycle: cycle,
+      recommendedTechniqueTypes: [],
+    },
+    harmonyDelta,
+    poolDelta,
+    precisionStacksAdded,
+    stabilityDelta: 0,
+    stabilityPenaltyDelta: 0,
+    statModifiers: { ...DEFAULT_MODIFIERS },
+  };
+}
+
 /**
  * Process harmony effect for a technique action.
  * Returns the updated harmony data, harmony delta, and stat modifiers.
@@ -864,6 +994,8 @@ export function processHarmonyEffect(
       return processEccentricDecree(harmonyData, context);
     case 'captivatingCadence':
       return processCaptivatingCadence(harmonyData, techniqueType);
+    case 'returningCycle':
+      return processReturningCycle(harmonyData, techniqueType, context);
     default:
       return {
         harmonyData,
@@ -879,10 +1011,19 @@ export function processHarmonyEffect(
 /**
  * Initialize harmony data for a new craft.
  */
-export function initHarmonyData(harmonyType: HarmonyType): HarmonyData {
+export function initHarmonyData(
+  harmonyType: HarmonyType,
+  startingMaxPool = 0,
+): HarmonyData {
   const base: HarmonyData = { recommendedTechniqueTypes: [] };
 
   switch (harmonyType) {
+    case 'returningCycle':
+      base.returningCycle = resolveReturningCycleData(
+        undefined,
+        startingMaxPool,
+      );
+      break;
     case 'forge':
       // Craft start applies the heat-0 buff, so heat 0 is the last buffed heat.
       base.forgeWorks = { heat: 0, lastBuffedHeat: 0 };

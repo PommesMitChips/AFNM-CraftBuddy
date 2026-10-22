@@ -5477,19 +5477,23 @@ describe('scoreState (isolated)', () => {
     expect(fairyRecovery).toBeDefined();
   });
 
-  it('exits deepening early on the stable fairy-recovery line without changing the recommendation', () => {
+  it('completes the contested 0.7.17 fairy-recovery search without a false stable exit', () => {
     const snapshot = loadOptimizerReplaySnapshot(
       'user-report-fairy-recovery.snapshot.json',
     );
     const input = getReplaySearchInput(snapshot);
-    // Bind on the node budget, not wall clock: the exit must be a function of
-    // completed passes (deterministic), not of machine speed. The stable exit
-    // fires at depth 6 after ~355 nodes, so 1000 nodes is generous headroom
-    // and 120s keeps the time budget from ever binding.
+    // This is a 0.7.12-era capture. In 0.7.17 masteries affect current payment
+    // and new buff names do not tick immediately (RUNTIME_EVIDENCE §17.3,
+    // G:540578-540601,540929-540937,541142-541146). Preserved mastery buffs
+    // and Delayed Fusion's later payout make the old ~199k recovery margin
+    // disappear. A 256-node probe completes contested passes through depth 6
+    // with the same two candidates as the 2,826-node full plan. Bind on nodes
+    // rather than burning a 120s Jest deadline; assert the contested outcome,
+    // not a machine-dependent final depth or the near-tie score ordering.
     const stableSearchConfig = {
       ...input.searchConfig,
       timeBudgetMs: 120000,
-      maxNodes: 1000,
+      maxNodes: 256,
     };
 
     const result = lookaheadSearch(
@@ -5499,23 +5503,24 @@ describe('scoreState (isolated)', () => {
       input.targetPerfection,
       input.lookaheadDepth,
       input.currentCondition,
-      input.forecastConditions as any,
+      input.forecastConditions as CraftingConditionType[],
       stableSearchConfig,
     );
 
-    // The recovery line is stable with a ~199k margin over the runner-up, so
-    // the relaxed early exit must fire well below the 48-deep plan instead of
-    // burning the whole time budget on passes that cannot flip it.
-    const earlyExit = result.searchMetrics!.earlyExit;
-    expect(earlyExit?.reason).toBe('stableRecommendation');
-    expect(earlyExit!.depth).toBeLessThan(input.lookaheadDepth);
-    expect(result.searchMetrics!.depthReached).toBe(earlyExit!.depth);
+    expect(result.searchMetrics!.earlyExit).toBeUndefined();
     expect(result.recommendation).not.toBeNull();
-    expect([
-      'delayed_fusion',
-      "fairy's_blessing",
-      'overbearing_stabilization',
-    ]).toContain(result.recommendation!.skill.key);
+    const candidates = [result.recommendation!, ...result.alternativeSkills];
+    expect(['delayed_fusion', 'overbearing_stabilization']).toContain(
+      result.recommendation!.skill.key,
+    );
+    expect(
+      candidates.some((entry) => entry.skill.key === 'delayed_fusion'),
+    ).toBe(true);
+    expect(
+      candidates.some(
+        (entry) => entry.skill.key === 'overbearing_stabilization',
+      ),
+    ).toBe(true);
   });
 
   it('does not exit early on the contested pattern-step-1 state', () => {
@@ -5590,6 +5595,14 @@ describe('scoreState (isolated)', () => {
       'forge-heat-runway-step-3.snapshot.json',
     );
     const input = getReplaySearchInput(snapshot);
+    // The 0.7.17 phase model contests this line at depth 5, then completes
+    // the fusion recovery pass at depth 6 (~6,000 nodes). The captured 4.5s
+    // deadline can stop on either pass under Jest; bind on work, not speed.
+    const stableSearchConfig = {
+      ...input.searchConfig,
+      timeBudgetMs: 120000,
+      maxNodes: 6000,
+    };
 
     const result = lookaheadSearch(
       input.state,
@@ -5598,8 +5611,8 @@ describe('scoreState (isolated)', () => {
       input.targetPerfection,
       input.lookaheadDepth,
       input.currentCondition,
-      input.forecastConditions as any,
-      input.searchConfig,
+      input.forecastConditions as CraftingConditionType[],
+      stableSearchConfig,
     );
 
     const allRecommendations = [

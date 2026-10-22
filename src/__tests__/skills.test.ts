@@ -1611,9 +1611,10 @@ describe('applySkill', () => {
     const newState = applySkill(state, skill, config);
 
     expect(newState).not.toBeNull();
-    // Penalty is reset to 0, so max stability = initialMaxStability
-    expect(newState!.stabilityPenalty).toBe(0);
-    expect(newState!.maxStability).toBe(60); // restored to initial
+    // Restoration resets the penalty during effects; ordinary turn decay
+    // follows harmony at cleanup, so this action then loses one maximum point.
+    expect(newState!.stabilityPenalty).toBe(1);
+    expect(newState!.maxStability).toBe(59);
   });
 
   it('should apply toxicity cleanse', () => {

@@ -5,7 +5,7 @@ description: CraftBuddy runtime integration workflow. Activate for src/modConten
 
 # CraftBuddy Runtime Integration
 
-`src/modContent/index.ts` and neighboring modules are the only boundary between AFNM runtime objects and the optimizer/UI. Target runtime: AFNM **0.7.10**.
+`src/modContent/index.ts` and neighboring modules are the only boundary between AFNM runtime objects and the optimizer/UI. Target runtime: AFNM **0.7.17-d8ae6ce**.
 
 Reach the optimizer only through `src/optimizer/index.ts`. If something is missing from the barrel, add it there rather than importing a submodule.
 
@@ -29,7 +29,7 @@ Do not scatter fallback logic into optimizer/UI modules. Centralize drift-prone 
 
 ## Runtime Essentials
 
-1. **Harmony is player-selected.** Read it from live craft state in `craftingContext.ts`; `recipe.harmonyTypeOverride` is the forced case. The `itemTypeToHarmonyType` ModAPI utility was removed by the game and is still absent in 0.7.10 (`hasItemTypeToHarmonyType` is false) — do not reintroduce item-kind inference. When the selection cannot be read, treat harmony data as missing (forge heat is the one verified-mirror exception). Sublime targets are scaled by the harmony's complexity multiplier (forge 1.2, alchemical 1.2, inscription 0.9, resonance 1.3, formless 1.5, enhancingEcho 1.3, eccentricDecree 1).
+1. **Harmony is player-selected.** Read it from live craft state in `craftingContext.ts`; `recipe.harmonyTypeOverride` is the forced case. The removed `itemTypeToHarmonyType` utility must not be replaced with item-kind inference. When the selection cannot be read, treat harmony data as missing (forge heat is the one verified-mirror exception). Sublime targets use the registry's complexity multiplier: forge/alchemical 1.2, inscription 0.9, resonance/enhancingEcho/Returning Cycle 1.3, formless/Captivating Cadence 1.5, Decree 1.
 2. **Native crafting auto-use is a pre-technique hook.** The game applies `player.player.currentCraftingAutoUseLoadout.slots` immediately before every technique dispatch. That read path is unchanged in 0.7.6, which only pairs a crafting loadout with its auto-use loadout through `craftingLoadout.craftingAutoUseLoadoutId` and resolves it before CraftBuddy reads state. `nativeAutoUse.ts` mirrors the selector; covered items leave the action space and `fullActionSpace` degrades to techniques + finish with a visible reason. Never let CraftBuddy consume an item the loadout covers.
 3. **Execution path is a correctness decision.** With a loadout active, execute the technique through the in-game control so the hook runs, and stop (`NativeAutoUseUnreachableError`) rather than dispatching around it. With no loadout, the direct `crafting/executeTechnique` dispatch is preferred: equivalent for the craft and more precise than DOM matching.
 4. **There is no manual finish.** The craft resolves itself when `willAutoFinish` holds. `Wait` is a real technique costing 10 stability, so it is never a stand-in for "finish now". Say "will auto-finish" in any copy.
@@ -90,6 +90,14 @@ Add focused tests for controller state, replay parity, or integration regression
 8. **Never hardcode buff magnitudes**: 0.7.6 nerfed Fallen Soulflame (0.5 → 0.2 intensity/control per stack, pool 3 → 2, stability 2 → 1) and neither engine needed a change, because both read live buff definitions. Copying a number into code re-breaks that.
 9. **Harmony clones must cover every harmony's state**: `cloneHarmonyData` in `harmonyState.ts` was silently dropping `enhancingEcho` and `eccentricDecree` during hydration. When adding harmony state, extend the clone and its test in the same change.
 10. **User-facing technique names are not internal names**: key `false_fusion` / internal `name` `False Fusion` displays as "Strive for Completion". Format labels with `techniqueDisplayName()` from `src/optimizer/index.ts`; keep matching, dispatch and `craftingTechniqueFromKnown` on `name`. The one exception is the DOM click fallback: `buildSearchAliases` in `autoCraftExecutor.ts` must index **both** spellings, because the in-game button carries the display name.
+
+## 0.7.17 payload contract
+
+- Preserve `qiDroplets` / `maxQiDroplets`, `dropletCost`, `noQiCost`, and the independent zero-based Qi/stability reduction and penalty channels.
+- Keep effect `masteryEntries` separate from success-only technique effects; static construction-time masteries must not be applied twice.
+- Preserve scaling multipliers/rounding, buff `additionalVariables`, and `setState.keys`; general triggered effects are not limited to `setState`.
+- Hydrate and clone `returningCycle` (`charges`, `storedQi`, fixed `chargeSize`, `pulseKey`, `lastOutcome`) without resetting it on a poll; replay includes the same state and the ordinary Returned Precision definition.
+- Native auto-use still precedes technique dispatch. Do not bypass the in-game hook when a loadout is active.
 
 ## References
 

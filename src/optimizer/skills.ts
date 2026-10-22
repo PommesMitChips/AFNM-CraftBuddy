@@ -6,6 +6,7 @@
  */
 
 import { CraftingState, BuffType } from './state';
+import { combineCostStat, costMultiplier, floorCost } from './costStats';
 import { safeFloor, safeAdd, safeMultiply } from '../utils/largeNumbers';
 import {
   TechniqueEffect,
@@ -29,6 +30,7 @@ import {
 } from './gameTypes';
 import {
   processHarmonyEffect,
+  RETURNED_PRECISION,
   getHarmonyStatModifiers,
   getHarmonyCostMultipliers,
   BarChangeEvent,
@@ -91,6 +93,8 @@ export interface SkillDefinition {
   preventsMaxStabilityDecay?: boolean;
   /** Toxicity cost for alchemy crafting */
   toxicityCost?: number;
+  dropletCost?: number;
+  noQiCost?: boolean;
   /** Toxicity cleanse amount (for cleanse skills) */
   toxicityCleanse?: number;
   /** Cooldown in turns after use */
@@ -378,8 +382,10 @@ function scaleBarContributions(
       rawPerfection += contribution.amount;
     }
   }
-  const completionScale = rawCompletion !== 0 ? actualCompletion / rawCompletion : 0;
-  const perfectionScale = rawPerfection !== 0 ? actualPerfection / rawPerfection : 0;
+  const completionScale =
+    rawCompletion !== 0 ? actualCompletion / rawCompletion : 0;
+  const perfectionScale =
+    rawPerfection !== 0 ? actualPerfection / rawPerfection : 0;
   return contributions.map((contribution) => ({
     bar: contribution.bar,
     amount:
@@ -462,6 +468,7 @@ export interface ActionSurvivabilityFloor {
 }
 
 export interface SkillGainOptions {
+  successChance?: number;
   /**
    * Include expected-value random factors (crit/success) in predicted gains.
    * Disable for tooltip-parity "immediate" gain previews.
@@ -1095,7 +1102,14 @@ function buildNativeAvailabilityVariables(
 
   const variables: Record<string, number> = {
     ...seededVariables,
+    itemEffectiveness: state.itemEffectiveness,
     pool: state.qi,
+    qiDroplets: state.qiDroplets,
+    maxqiDroplets: state.maxQiDroplets,
+    qiCostReduction: state.qiCostReduction,
+    qiCostPenalty: state.qiCostPenalty,
+    stabilityCostReduction: state.stabilityCostReduction,
+    stabilityCostPenalty: state.stabilityCostPenalty,
     maxpool: maxPool,
     completion: state.completion,
     perfection: state.perfection,
@@ -1273,7 +1287,11 @@ function getTechniqueScalingBase(
   activeBuffs: ActiveBuffMap,
 ): ScalingVariables {
   const cached = techniqueScalingBaseCache.get(state);
-  if (cached && cached.config === config && cached.activeBuffs === activeBuffs) {
+  if (
+    cached &&
+    cached.config === config &&
+    cached.activeBuffs === activeBuffs
+  ) {
     return cached.base;
   }
   const base = buildTechniqueScalingBase(state, config, activeBuffs);
@@ -1322,11 +1340,17 @@ function buildTechniqueScalingBase(
     critchance: 0,
     critmultiplier: 0,
     pool: state.qi,
+    qiDroplets: state.qiDroplets,
+    maxqiDroplets: state.maxQiDroplets,
+    qiCostReduction: state.qiCostReduction,
+    qiCostPenalty: state.qiCostPenalty,
+    stabilityCostReduction: state.stabilityCostReduction,
+    stabilityCostPenalty: state.stabilityCostPenalty,
     maxpool: config.maxQi,
     toxicity: state.toxicity,
     maxtoxicity: state.maxToxicity,
     resistance: 0,
-    itemEffectiveness: 100,
+    itemEffectiveness: state.itemEffectiveness,
     pillsPerRound: config.pillsPerRound || 1,
     poolCostFlat: Math.max(0, Math.floor(state.poolCostFlat)),
     poolCostPercentage: normalizeRuntimeCostPercentage(
@@ -1422,35 +1446,50 @@ function applyBuffStatContributions(
     ) {
       return;
     }
-    const evalVars: ScalingVariables = { ...vars, stacks: tracked.stacks };
-    const normalizedKey = normalizeBuffName(
-      definition.name || tracked.name || buffKey,
-    );
-    if (normalizedKey) {
-      evalVars[normalizedKey] = tracked.stacks;
-    }
-    evalVars[buffKey] = tracked.stacks;
-    // 0.7.7+ buffs scale off trigger-written internal state (e.g. True Bifang
-    // Flame's `scaling: 'blaze'`); the keys share the eqn namespace.
-    if (tracked.internalState) {
-      for (const [stateKey, stateValue] of Object.entries(
-        tracked.internalState,
-      )) {
-        if (typeof stateValue === 'number' && Number.isFinite(stateValue)) {
-          evalVars[stateKey] = stateValue;
-        }
-      }
-    }
-
-    for (const [statKey, scaling] of Object.entries(definition.stats)) {
+    // Literal stats never read a buff-local scope. Build that relatively large
+    // frame lazily, and only once, if a stat actually has scaling/expression data.
+    let evalVars: ScalingVariables | undefined;
+    for (const [statKey, scaling] of getBuffStatEntries(definition.stats)) {
       if (!scaling) continue;
+      if (!isLiteralScaling(scaling) && !evalVars) {
+        evalVars = {
+          ...vars,
+          ...definition.additionalVariables,
+          ...tracked.internalState,
+          stacks: tracked.stacks,
+        };
+        if (normalizedBuff) evalVars[normalizedBuff] = tracked.stacks;
+        evalVars[buffKey] = tracked.stacks;
+        // 0.7.7+ buffs scale off trigger-written internal state (e.g. True Bifang
+        // Flame's `scaling: 'blaze'`); the keys share the eqn namespace.
+        if (tracked.internalState) {
+          for (const [stateKey, stateValue] of Object.entries(
+            tracked.internalState,
+          )) {
+            if (typeof stateValue === 'number' && Number.isFinite(stateValue)) {
+              evalVars[stateKey] = stateValue;
+            }
+          }
+        }
+        evalVars.stacks = tracked.stacks;
+      }
       const raw = evaluateScalingWithMasteryUpgrades(
         scaling,
         masteryUpgrades,
-        evalVars,
+        evalVars ?? vars,
         0,
       );
       switch (statKey) {
+        case 'qiCostReduction':
+        case 'qiCostPenalty':
+        case 'stabilityCostReduction':
+        case 'stabilityCostPenalty':
+          adjustedVars[statKey] = combineCostStat(
+            statKey.endsWith('Reduction'),
+            adjustedVars[statKey] ?? 0,
+            raw,
+          );
+          break;
         case 'poolCostPercentage':
           adjustedVars.poolCostPercentage = Math.floor(
             (adjustedVars.poolCostPercentage / 100) * (raw / 100) * 100,
@@ -1479,12 +1518,56 @@ function applyBuffStatContributions(
   return adjustedVars;
 }
 
-function getEffectiveMaxPool(
+const buffStatEntries = new WeakMap<
+  NonNullable<BuffDefinition['stats']>,
+  Array<[string, Scaling | undefined]>
+>();
+function getBuffStatEntries(
+  stats: NonNullable<BuffDefinition['stats']>,
+): Array<[string, Scaling | undefined]> {
+  let entries = buffStatEntries.get(stats);
+  if (!entries) {
+    entries = Object.entries(stats);
+    buffStatEntries.set(stats, entries);
+  }
+  return entries;
+}
+
+function buffsCanChangeMaxPool(activeBuffs: ActiveBuffMap): boolean {
+  if (activeBuffs.has('maxpool')) return true;
+  let changes = false;
+  activeBuffs.forEach((buff) => {
+    if (buff.definition?.stats?.maxpool !== undefined) changes = true;
+  });
+  return changes;
+}
+
+const buffedTechniqueVariablesCache = new WeakMap<
+  CraftingState,
+  {
+    config: OptimizerConfig;
+    buffs: ActiveBuffMap;
+    upgrades: MasteryUpgradeMap;
+    variables: ScalingVariables;
+  }
+>();
+
+function getBuffedTechniqueVariables(
   state: CraftingState,
   config: OptimizerConfig,
-  activeBuffs: ActiveBuffMap = getResolvedActiveBuffs(state, config),
-): number {
-  const baseVars = buildTechniqueScalingVariables(
+  activeBuffs: ActiveBuffMap,
+  upgrades: MasteryUpgradeMap = EMPTY_MASTERY_UPGRADES,
+): ScalingVariables {
+  const key = hasMasteryUpgrades(upgrades) ? upgrades : EMPTY_MASTERY_UPGRADES;
+  const cached = buffedTechniqueVariablesCache.get(state);
+  if (
+    cached?.config === config &&
+    cached.buffs === activeBuffs &&
+    cached.upgrades === key
+  ) {
+    return cached.variables;
+  }
+  const base = buildTechniqueScalingVariables(
     state,
     config,
     config.baseControl,
@@ -1493,12 +1576,24 @@ function getEffectiveMaxPool(
     state.critMultiplier,
     activeBuffs,
   );
-  const buffedVars = applyBuffStatContributions(
-    state,
-    baseVars,
-    EMPTY_MASTERY_UPGRADES,
-    activeBuffs,
-  );
+  const variables = applyBuffStatContributions(state, base, key, activeBuffs);
+  // Callers only read this state-derived frame; action/condition scopes copy it.
+  buffedTechniqueVariablesCache.set(state, {
+    config,
+    buffs: activeBuffs,
+    upgrades: key,
+    variables,
+  });
+  return variables;
+}
+
+function getEffectiveMaxPool(
+  state: CraftingState,
+  config: OptimizerConfig,
+  activeBuffs: ActiveBuffMap = getResolvedActiveBuffs(state, config),
+): number {
+  if (!buffsCanChangeMaxPool(activeBuffs)) return Math.max(1, config.maxQi);
+  const buffedVars = getBuffedTechniqueVariables(state, config, activeBuffs);
 
   return Math.max(
     1,
@@ -1513,6 +1608,7 @@ function applyConditionEffectsToVariables(
   let control = vars.control;
   let intensity = vars.intensity;
   let successChanceBonus = vars.successChanceBonus;
+  const channels = { ...vars };
   let poolCostPercentage = normalizeRuntimeCostPercentage(
     vars.poolCostPercentage,
   );
@@ -1529,21 +1625,34 @@ function applyConditionEffectsToVariables(
       successChanceBonus += effect.bonus;
     } else if (effect.kind === 'pool' && effect.multiplier !== undefined) {
       poolCostPercentage = Math.floor(poolCostPercentage * effect.multiplier);
+      const key = effect.multiplier < 1 ? 'qiCostReduction' : 'qiCostPenalty';
+      channels[key] = combineCostStat(
+        effect.multiplier < 1,
+        channels[key],
+        Math.abs(1 - effect.multiplier) * 100,
+      );
     } else if (effect.kind === 'stability' && effect.multiplier !== undefined) {
       stabilityCostPercentage = Math.floor(
         stabilityCostPercentage * effect.multiplier,
       );
+      const key =
+        effect.multiplier < 1
+          ? 'stabilityCostReduction'
+          : 'stabilityCostPenalty';
+      channels[key] = combineCostStat(
+        effect.multiplier < 1,
+        channels[key],
+        Math.abs(1 - effect.multiplier) * 100,
+      );
     }
   }
 
-  return {
-    ...vars,
-    control,
-    intensity,
-    successChanceBonus,
-    poolCostPercentage,
-    stabilityCostPercentage,
-  };
+  channels.control = control;
+  channels.intensity = intensity;
+  channels.successChanceBonus = successChanceBonus;
+  channels.poolCostPercentage = poolCostPercentage;
+  channels.stabilityCostPercentage = stabilityCostPercentage;
+  return channels;
 }
 
 export function evaluateEffectCondition(
@@ -1739,44 +1848,34 @@ function buildPreMasteryActionVariables(
   masteryUpgrades: MasteryUpgradeMap = EMPTY_MASTERY_UPGRADES,
 ): ScalingVariables {
   const activeBuffs = getResolvedActiveBuffs(state, config);
-  const baseVars = buildTechniqueScalingVariables(
+  const withBuffs = getBuffedTechniqueVariables(
     state,
     config,
-    config.baseControl,
-    config.baseIntensity,
-    state.critChance,
-    state.critMultiplier,
     activeBuffs,
-  );
-  const withBuffs = applyBuffStatContributions(
-    state,
-    baseVars,
     masteryUpgrades,
-    activeBuffs,
   );
   const withConditions = applyConditionEffectsToVariables(
     withBuffs,
     conditionEffects,
   );
 
-  return {
-    ...withConditions,
-    control: withConditions.control * harmonyMods.controlMultiplier,
-    intensity: withConditions.intensity * harmonyMods.intensityMultiplier,
-    critchance: withConditions.critchance + harmonyMods.critChanceBonus,
-    successChanceBonus:
-      withConditions.successChanceBonus + harmonyMods.successChanceBonus,
-    poolCostPercentage: Math.floor(
-      (withConditions.poolCostPercentage / 100) *
-        (harmonyMods.poolCostPercentage / 100) *
-        100,
-    ),
-    stabilityCostPercentage: Math.floor(
-      (withConditions.stabilityCostPercentage / 100) *
-        (harmonyMods.stabilityCostPercentage / 100) *
-        100,
-    ),
-  };
+  // applyConditionEffectsToVariables owns this copy; do not clone the same
+  // frame again for the harmony overlay. The cached buffed frame stays untouched.
+  withConditions.control *= harmonyMods.controlMultiplier;
+  withConditions.intensity *= harmonyMods.intensityMultiplier;
+  withConditions.critchance += harmonyMods.critChanceBonus;
+  withConditions.successChanceBonus += harmonyMods.successChanceBonus;
+  withConditions.poolCostPercentage = Math.floor(
+    (withConditions.poolCostPercentage / 100) *
+      (harmonyMods.poolCostPercentage / 100) *
+      100,
+  );
+  withConditions.stabilityCostPercentage = Math.floor(
+    (withConditions.stabilityCostPercentage / 100) *
+      (harmonyMods.stabilityCostPercentage / 100) *
+      100,
+  );
+  return withConditions;
 }
 
 export interface EffectiveActionCosts {
@@ -1816,12 +1915,12 @@ export function calculateEffectiveActionCosts(
 ): EffectiveActionCosts {
   const activeBuffs = getResolvedActiveBuffs(state, config);
   let poolCostFlat = Math.max(0, Math.floor(state.poolCostFlat));
-  let poolCostPercentage = normalizeRuntimeCostPercentage(
-    state.poolCostPercentage,
-  );
-  let stabilityCostPercentage = normalizeRuntimeCostPercentage(
-    state.stabilityCostPercentage,
-  );
+  let qiReduction = state.qiCostReduction;
+  let qiPenalty = state.qiCostPenalty;
+  let stabilityReduction = state.stabilityCostReduction;
+  let stabilityPenalty = state.stabilityCostPenalty;
+  let legacyQiMultiplier = 1;
+  let legacyStabilityMultiplier = 1;
   let harmonyPoolMultiplier = 1;
   let harmonyStabilityMultiplier = 1;
 
@@ -1832,6 +1931,10 @@ export function calculateEffectiveActionCosts(
       (tracked) =>
         Boolean(
           tracked.definition?.stats?.poolCostFlat ||
+          tracked.definition?.stats?.qiCostReduction ||
+          tracked.definition?.stats?.qiCostPenalty ||
+          tracked.definition?.stats?.stabilityCostReduction ||
+          tracked.definition?.stats?.stabilityCostPenalty ||
           tracked.definition?.stats?.poolCostPercentage ||
           tracked.definition?.stats?.stabilityCostPercentage,
         ),
@@ -1855,20 +1958,53 @@ export function calculateEffectiveActionCosts(
       (harmonyCostMultipliers.stabilityCostPercentage / 100);
 
     if (hasCostAffectingBuff) {
-      // The harmony multiplier is applied separately below, so the variable
-      // build must see neutral harmony cost percentages.
-      const runtimeVars = buildPreMasteryActionVariables(state, config, [], {
-        ...baseHarmonyMods,
-        poolCostPercentage: 100,
-        stabilityCostPercentage: 100,
-      });
+      // Read only the buffed cost channels. The full action frame's condition
+      // and harmony overlays would copy every variable just to neutralize both
+      // cost multipliers again. Keep its legacy percentage rounding below.
+      const runtimeVars = getBuffedTechniqueVariables(
+        state,
+        config,
+        activeBuffs,
+      );
       poolCostFlat = Math.max(0, Math.floor(runtimeVars.poolCostFlat ?? 0));
-      poolCostPercentage = normalizeRuntimeCostPercentage(
-        runtimeVars.poolCostPercentage,
-      );
-      stabilityCostPercentage = normalizeRuntimeCostPercentage(
-        runtimeVars.stabilityCostPercentage,
-      );
+      qiReduction = runtimeVars.qiCostReduction;
+      qiPenalty = runtimeVars.qiCostPenalty;
+      stabilityReduction = runtimeVars.stabilityCostReduction;
+      stabilityPenalty = runtimeVars.stabilityCostPenalty;
+      // Compatibility percentages are not runtime cost channels. Their old
+      // floor/ratio applies only on the side that actually has a legacy buff;
+      // otherwise it would truncate a fractional modern baseline (84.5 -> 84).
+      if (
+        Array.from(activeBuffs.values()).some(
+          (buff) => buff.definition?.stats?.poolCostPercentage !== undefined,
+        )
+      ) {
+        legacyQiMultiplier =
+          normalizeRuntimeCostPercentage(
+            Math.floor(
+              (normalizeRuntimeCostPercentage(runtimeVars.poolCostPercentage) /
+                100) *
+                100,
+            ),
+          ) / Math.max(1e-10, state.poolCostPercentage);
+      }
+      if (
+        Array.from(activeBuffs.values()).some(
+          (buff) =>
+            buff.definition?.stats?.stabilityCostPercentage !== undefined,
+        )
+      ) {
+        legacyStabilityMultiplier =
+          normalizeRuntimeCostPercentage(
+            Math.floor(
+              (normalizeRuntimeCostPercentage(
+                runtimeVars.stabilityCostPercentage,
+              ) /
+                100) *
+                100,
+            ),
+          ) / Math.max(1e-10, state.stabilityCostPercentage);
+      }
     }
   }
   // Condition effects multiply the cost *percentages* rather than the raw
@@ -1877,43 +2013,60 @@ export function calculateEffectiveActionCosts(
   for (const effect of conditionEffects) {
     if (effect.multiplier === undefined) continue;
     if (effect.kind === 'pool') {
-      poolCostPercentage *= effect.multiplier;
+      if (effect.multiplier < 1)
+        qiReduction = combineCostStat(
+          true,
+          qiReduction,
+          (1 - effect.multiplier) * 100,
+        );
+      else
+        qiPenalty = combineCostStat(
+          false,
+          qiPenalty,
+          (effect.multiplier - 1) * 100,
+        );
     } else if (effect.kind === 'stability') {
-      stabilityCostPercentage *= effect.multiplier;
+      if (effect.multiplier < 1)
+        stabilityReduction = combineCostStat(
+          true,
+          stabilityReduction,
+          (1 - effect.multiplier) * 100,
+        );
+      else
+        stabilityPenalty = combineCostStat(
+          false,
+          stabilityPenalty,
+          (effect.multiplier - 1) * 100,
+        );
     }
   }
 
-  let qiCost = getEffectiveQiCost(skill);
-  let stabilityDelta = -getEffectiveStabilityCost(skill);
+  const qiCost = skill.noQiCost
+    ? 0
+    : Math.floor(
+        floorCost(
+          (getEffectiveQiCost(skill) + poolCostFlat) *
+            costMultiplier(qiReduction, qiPenalty) *
+            legacyQiMultiplier,
+        ) * harmonyPoolMultiplier,
+      );
+  const stabilityCost = Math.floor(
+    floorCost(
+      getEffectiveStabilityCost(skill) *
+        costMultiplier(stabilityReduction, stabilityPenalty) *
+        legacyStabilityMultiplier,
+    ) * harmonyStabilityMultiplier,
+  );
 
   // getPoolCost: `r = e; if (flat) r = max(0, r + flat); if (pct) r = floor(r * pct / 100)`
   // The flat surcharge is added *before* the percentage, and only one floor runs.
-  if (poolCostFlat > 0) {
-    qiCost = Math.max(0, qiCost + poolCostFlat);
-  }
-  if (poolCostPercentage !== 100) {
-    qiCost = Math.floor((qiCost * poolCostPercentage) / 100);
-  }
-
-  if (harmonyPoolMultiplier !== 1) {
-    qiCost = Math.floor(Math.max(0, qiCost) * harmonyPoolMultiplier);
-  }
 
   // getStabilityCost: `n = -e; if (pct) n = ceil(n * pct / 100); return -n`
   // i.e. a single ceil applied to the negative stability delta.
-  if (stabilityDelta < 0 && stabilityCostPercentage !== 100) {
-    stabilityDelta = Math.ceil(
-      (stabilityDelta * stabilityCostPercentage) / 100,
-    );
-  }
-
-  if (stabilityDelta < 0 && harmonyStabilityMultiplier !== 1) {
-    stabilityDelta = Math.floor(stabilityDelta * harmonyStabilityMultiplier);
-  }
 
   return {
     qiCost: Math.max(0, qiCost),
-    stabilityCost: Math.max(0, -stabilityDelta),
+    stabilityCost,
     requiredPostStability: Math.max(0, minStability),
   };
 }
@@ -2220,10 +2373,12 @@ export function calculateSkillGains(
     : 1;
 
   const baseSuccessChance = skill.successChance ?? 1;
-  const totalSuccessChance = Math.min(
-    1,
-    Math.max(0, baseSuccessChance + scalingVars.successChanceBonus),
-  );
+  const totalSuccessChance =
+    options.successChance ??
+    Math.min(
+      1,
+      Math.max(0, baseSuccessChance + scalingVars.successChanceBonus),
+    );
 
   // Expected value = successChance * (gains with crit).
   // Note: Only positive gains can crit (matching game behavior).
@@ -3217,10 +3372,10 @@ export function calculateActionSurvivabilityFloor(
     !isItemAction &&
     config.isSublimeCraft &&
     config.craftingType &&
-    state.harmonyData
+    (state.harmonyData || config.craftingType === 'returningCycle')
   ) {
     const harmonyResult = processHarmonyEffect(
-      state.harmonyData,
+      state.harmonyData ?? { recommendedTechniqueTypes: [] },
       config.craftingType,
       skill.type,
     );
@@ -3312,6 +3467,7 @@ export function canApplySkill(
   pillsPerRound: number = 1,
   config?: OptimizerConfig,
 ): boolean {
+  if (state.qiDroplets < (skill.dropletCost ?? 0)) return false;
   const isItemAction = skill.actionKind === 'item';
 
   // Game requires current stability to be above 0 to perform actions.
@@ -3434,33 +3590,580 @@ export function canApplySkill(
  * @param conditionEffects - Current condition effects
  * @param targetCompletion - Target completion for completion bonus calculation
  */
+interface ActionPhaseContext {
+  existingBuffNames: Pick<ReadonlySet<string>, 'has'>;
+  successChance?: number;
+  masteryPhase?: boolean;
+  barStart: CraftingState;
+  barContributions: BarContribution[];
+  paymentCosts?: EffectiveActionCosts;
+  nativeSource?: CraftingState;
+}
+
+const masteryPhaseSkills = new WeakMap<
+  SkillDefinition,
+  WeakMap<TechniqueEffect[], SkillDefinition>
+>();
+
+function masteryPhaseSkill(
+  skill: SkillDefinition,
+  effects: TechniqueEffect[],
+): SkillDefinition {
+  let phases = masteryPhaseSkills.get(skill);
+  if (!phases) {
+    phases = new WeakMap();
+    masteryPhaseSkills.set(skill, phases);
+  }
+  const cached = phases.get(effects);
+  if (cached) return cached;
+  const phase: SkillDefinition = {
+    name: skill.name,
+    key: skill.key,
+    type: skill.type,
+    qiCost: 0,
+    noQiCost: true,
+    stabilityCost: 0,
+    baseCompletionGain: 0,
+    basePerfectionGain: 0,
+    stabilityGain: 0,
+    maxStabilityChange: 0,
+    buffMultiplier: 1,
+    buffType: BuffType.NONE,
+    buffDuration: 0,
+    consumesTurn: false,
+    effects,
+    masteryEntries: skill.masteryEntries?.filter(
+      (entry) => entry.kind !== 'effect',
+    ),
+  };
+  phases.set(effects, phase);
+  return phase;
+}
+
+const PAYMENT_STAT_KEYS = [
+  'poolCostFlat',
+  'poolCostPercentage',
+  'stabilityCostPercentage',
+  'qiCostReduction',
+  'qiCostPenalty',
+  'stabilityCostReduction',
+  'stabilityCostPenalty',
+] as const;
+type EffectMastery = {
+  condition?: CraftingTechniqueCondition;
+  effects: TechniqueEffect[];
+};
+
+function upsertBuffIntoMap(
+  buffs: ActiveBuffMap,
+  definition: BuffDefinition | undefined,
+  stacksDelta: number,
+  seedVariables?: ScalingVariables,
+): void {
+  if (!definition || !Number.isFinite(stacksDelta)) return;
+  const delta = Math.floor(stacksDelta);
+  if (delta === 0) return;
+  const key = normalizeBuffName(definition.name);
+  if (!key) return;
+  const existing = buffs.get(key);
+  const canStack =
+    definition.canStack ?? existing?.definition?.canStack ?? true;
+  const maxStacks = definition.maxStacks ?? existing?.definition?.maxStacks;
+  if (existing && !canStack) return;
+  let stacks = (existing?.stacks ?? 0) + delta;
+  if (maxStacks !== undefined) stacks = Math.min(stacks, maxStacks);
+  if (existing) {
+    if (stacks > 0)
+      buffs.set(key, {
+        ...existing,
+        definition: existing.definition ?? definition,
+        stacks: Math.floor(stacks),
+      });
+    else buffs.delete(key);
+  } else if (delta > 0) {
+    buffs.set(key, {
+      name: key,
+      stacks: Math.floor(stacks),
+      definition,
+      internalState: seedBuffInternalState(definition, seedVariables),
+    });
+  }
+}
+
+function hasPaymentStats(definition: BuffDefinition | undefined): boolean {
+  return PAYMENT_STAT_KEYS.some(
+    (key) => definition?.stats?.[key] !== undefined,
+  );
+}
+
+function isLiteralScaling(scaling: Scaling | undefined): boolean {
+  return !scaling || Object.keys(scaling).every((key) => key === 'value');
+}
+
+const literalPaymentBuffs = new WeakMap<BuffDefinition, boolean>();
+function hasLiteralPaymentStats(
+  definition: BuffDefinition | undefined,
+): boolean {
+  if (!definition) return true;
+  const cached = literalPaymentBuffs.get(definition);
+  if (cached !== undefined) return cached;
+  const literal =
+    !definition.triggeredEffects?.length &&
+    PAYMENT_STAT_KEYS.every((key) => isLiteralScaling(definition.stats?.[key]));
+  literalPaymentBuffs.set(definition, literal);
+  return literal;
+}
+
+/** Constant cost stats cannot depend on the mastery bar/resource effects.
+ * Project just buff creation for those common payloads; expressions, trigger
+ * hooks and other mutations retain the full phase interpreter below. */
+function literalMasteryPayment(
+  start: CraftingState,
+  skill: SkillDefinition,
+  config: OptimizerConfig,
+  conditionEffects: ConditionEffect[],
+  entries: EffectMastery[],
+): { costs?: EffectiveActionCosts } | undefined {
+  const active = getResolvedActiveBuffs(start, config);
+  if (
+    Array.from(active.values()).some(
+      (buff) => !hasLiteralPaymentStats(buff.definition),
+    )
+  )
+    return undefined;
+  const costNames = new Set<string>();
+  active.forEach((buff, key) => {
+    if (hasPaymentStats(buff.definition)) costNames.add(key);
+  });
+  for (const entry of entries) {
+    if (entry.condition && entry.condition.kind !== 'chance') return undefined;
+    for (const effect of entry.effects) {
+      if (effect.kind === 'createBuff') {
+        if (
+          !hasLiteralPaymentStats(effect.buff) ||
+          !isLiteralScaling(effect.stacks) ||
+          (effect.condition && effect.condition.kind !== 'chance')
+        )
+          return undefined;
+        if (hasPaymentStats(effect.buff))
+          costNames.add(normalizeBuffName(effect.buff?.name));
+      } else if (
+        ![
+          'completion',
+          'perfection',
+          'stability',
+          'pool',
+          'maxStability',
+          'cleanseToxicity',
+        ].includes(effect.kind)
+      ) {
+        return undefined;
+      }
+    }
+  }
+  let outcomes = [{ probability: 1, buffs: active }];
+  let varies = false;
+  const creations = entries.map((entry) => ({
+    ...entry,
+    effects: entry.effects.filter(
+      (effect) =>
+        effect.kind === 'createBuff' &&
+        costNames.has(normalizeBuffName(effect.buff?.name)),
+    ),
+  }));
+  for (const entry of creations) {
+    if (!entry.effects.length) continue;
+    const probability =
+      entry.condition?.kind === 'chance'
+        ? Math.max(0, Math.min(1, entry.condition.percentage / 100))
+        : 1;
+    let next: typeof outcomes = [];
+    for (const outcome of outcomes) {
+      if (probability < 1)
+        next.push({
+          ...outcome,
+          probability: outcome.probability * (1 - probability),
+        });
+      if (probability <= 0) continue;
+      let block = [
+        {
+          buffs: outcome.buffs,
+          probability: outcome.probability * probability,
+        },
+      ];
+      for (const effect of entry.effects) {
+        const chance =
+          effect.condition?.kind === 'chance'
+            ? Math.max(0, Math.min(1, effect.condition.percentage / 100))
+            : 1;
+        varies ||=
+          (probability > 0 && probability < 1) || (chance > 0 && chance < 1);
+        block = block.flatMap((branch) => {
+          const result: typeof block = [];
+          if (chance < 1)
+            result.push({
+              ...branch,
+              probability: branch.probability * (1 - chance),
+            });
+          if (chance > 0) {
+            const buffs = new Map(branch.buffs);
+            upsertBuffIntoMap(
+              buffs,
+              effect.buff,
+              evaluateScaling(effect.stacks, {} as ScalingVariables, 1),
+            );
+            result.push({ buffs, probability: branch.probability * chance });
+          }
+          return result;
+        });
+      }
+      next = next.concat(block);
+    }
+    outcomes = next;
+  }
+  if (!varies) return {};
+  const costs = {
+    qiCost: 0,
+    stabilityCost: 0,
+    requiredPostStability: Math.max(0, config.minStability),
+  };
+  let first: EffectiveActionCosts | undefined;
+  let different = false;
+  for (const outcome of outcomes) {
+    const payment = calculateEffectiveActionCosts(
+      start.copy({ buffs: outcome.buffs }),
+      skill,
+      config.minStability,
+      conditionEffects,
+      config,
+    );
+    if (first)
+      different ||=
+        payment.qiCost !== first.qiCost ||
+        payment.stabilityCost !== first.stabilityCost;
+    else first = payment;
+    costs.qiCost += outcome.probability * payment.qiCost;
+    costs.stabilityCost += outcome.probability * payment.stabilityCost;
+  }
+  return different ? { costs } : {};
+}
+
+/** Resolve a phase gate without building an unused variable scope. */
+function evaluateMasteryPhaseCondition(
+  condition: CraftingTechniqueCondition | undefined,
+  state: CraftingState,
+  config: OptimizerConfig,
+  conditionEffects: ConditionEffect[],
+): ConditionEvaluation {
+  // These gates do not read any variables. In particular, unconditional and
+  // chance-gated mastery blocks need no extra full action-scope construction.
+  if (!condition) return { met: true, probability: 1 };
+  if (condition.kind === 'chance') {
+    const probability = Math.max(0, Math.min(1, condition.percentage / 100));
+    return { met: probability > 0, probability };
+  }
+  return evaluateEffectCondition(
+    condition,
+    state,
+    buildPreMasteryActionVariables(
+      state,
+      config,
+      conditionEffects,
+      getHarmonyStatModifiers(state.harmonyData, config.craftingType),
+    ),
+    0,
+  );
+}
+
+/** Local payment integration only: these outcomes never enter the search tree. */
+function expectedMasteryPayment(
+  start: CraftingState,
+  skill: SkillDefinition,
+  config: OptimizerConfig,
+  conditionEffects: ConditionEffect[],
+  targetCompletion: number,
+  currentCondition: string | undefined,
+  targetPerfection: number,
+  phase: ActionPhaseContext,
+): EffectiveActionCosts | undefined {
+  const entries = (skill.masteryEntries ?? []).filter(
+    (entry) => entry.kind === 'effect' && Array.isArray(entry.effects),
+  ) as EffectMastery[];
+  if (
+    !entries.some(
+      (entry) =>
+        entry.condition?.kind === 'chance' ||
+        (entry.effects as TechniqueEffect[]).some(
+          (effect) => effect.condition?.kind === 'chance',
+        ),
+    )
+  ) {
+    return undefined;
+  }
+  const literal = literalMasteryPayment(
+    start,
+    skill,
+    config,
+    conditionEffects,
+    entries,
+  );
+  if (literal) return literal.costs;
+  let outcomes = [{ probability: 1, state: start }];
+  for (const entry of entries) {
+    // An entry's chance gates its entire block; nested chances are independent.
+    let effectOutcomes: Array<{
+      probability: number;
+      effects: TechniqueEffect[];
+    }> = [{ probability: 1, effects: [] }];
+    for (const effect of entry.effects as TechniqueEffect[]) {
+      if (effect.condition?.kind !== 'chance') {
+        for (const outcome of effectOutcomes) outcome.effects.push(effect);
+        continue;
+      }
+      const probability = Math.max(
+        0,
+        Math.min(1, effect.condition.percentage / 100),
+      );
+      effectOutcomes = effectOutcomes.flatMap((outcome) => [
+        ...(probability < 1
+          ? [
+              {
+                ...outcome,
+                probability: outcome.probability * (1 - probability),
+              },
+            ]
+          : []),
+        ...(probability > 0
+          ? [
+              {
+                probability: outcome.probability * probability,
+                effects: [
+                  ...outcome.effects,
+                  { ...effect, condition: undefined },
+                ],
+              },
+            ]
+          : []),
+      ]);
+    }
+    const next: typeof outcomes = [];
+    for (const outcome of outcomes) {
+      const condition = evaluateMasteryPhaseCondition(
+        entry.condition,
+        outcome.state,
+        config,
+        conditionEffects,
+      );
+      if (!condition.met || condition.probability < 1) {
+        next.push({
+          state: outcome.state,
+          probability:
+            outcome.probability *
+            (condition.met ? 1 - condition.probability : 1),
+        });
+      }
+      if (!condition.met || condition.probability <= 0) continue;
+      for (const effects of effectOutcomes) {
+        const state =
+          effects.effects.length === 0
+            ? outcome.state
+            : applySkillTransition(
+                outcome.state,
+                masteryPhaseSkill(skill, effects.effects),
+                config,
+                conditionEffects,
+                targetCompletion,
+                currentCondition,
+                targetPerfection,
+                {
+                  ...phase,
+                  successChance: 1,
+                  masteryPhase: true,
+                  barContributions: [],
+                },
+              )!;
+        next.push({
+          state,
+          probability:
+            outcome.probability * condition.probability * effects.probability,
+        });
+      }
+    }
+    outcomes = next;
+  }
+  const costs = outcomes.map((outcome) => ({
+    ...outcome,
+    costs: calculateEffectiveActionCosts(
+      outcome.state,
+      skill,
+      config.minStability,
+      conditionEffects,
+      config,
+    ),
+  }));
+  const first = costs[0]?.costs;
+  if (
+    !first ||
+    costs.every(
+      ({ costs }) =>
+        costs.qiCost === first.qiCost &&
+        costs.stabilityCost === first.stabilityCost,
+    )
+  ) {
+    return undefined;
+  }
+  return {
+    qiCost: costs.reduce(
+      (sum, outcome) => sum + outcome.probability * outcome.costs.qiCost,
+      0,
+    ),
+    stabilityCost: costs.reduce(
+      (sum, outcome) => sum + outcome.probability * outcome.costs.stabilityCost,
+      0,
+    ),
+    requiredPostStability: first.requiredPostStability,
+  };
+}
+
 export function applySkill(
   state: CraftingState,
   skill: SkillDefinition,
   config: OptimizerConfig,
   conditionEffects: ConditionEffect[] = [],
-  targetCompletion: number = 0,
+  targetCompletion = 0,
   currentCondition?: string,
-  targetPerfection: number = 0,
+  targetPerfection = 0,
 ): CraftingState | null {
-  const maxToxicity = config.maxToxicity || 0;
-  const resolvedActiveBuffs = getResolvedActiveBuffs(state, config);
-
-  // Validate skill can be applied
   if (
     !canApplySkill(
       state,
       skill,
       config.minStability,
-      maxToxicity,
+      config.maxToxicity || 0,
       currentCondition,
       conditionEffects,
       config.pillsPerRound || 1,
       config,
     )
-  ) {
+  )
     return null;
+
+  const existingBuffNames = getResolvedActiveBuffs(state, config);
+  const hasMasteryEffects =
+    skill.masteryEntries?.some((entry) => entry.kind === 'effect') ?? false;
+  const paysSetup = Boolean(
+    skill.buffCost || skill.toxicityCost || skill.dropletCost,
+  );
+  let successChance: number | undefined;
+  if (paysSetup || hasMasteryEffects) {
+    const initialVars = buildPreMasteryActionVariables(
+      state,
+      config,
+      conditionEffects,
+      getHarmonyStatModifiers(state.harmonyData, config.craftingType),
+    );
+    successChance =
+      skill.actionKind === 'item'
+        ? 1
+        : Math.max(
+            0,
+            Math.min(
+              1,
+              (skill.successChance ?? 1) + initialVars.successChanceBonus,
+            ),
+          );
   }
+  const buffs = skill.buffCost ? new Map(existingBuffNames) : existingBuffNames;
+  if (skill.buffCost) {
+    const cost = skill.buffCost;
+    const owner = buffs.get(cost.buffName);
+    if (owner) {
+      const remaining = cost.consumeAll
+        ? 0
+        : Math.max(0, owner.stacks - (cost.amount ?? 0));
+      if (remaining > 0)
+        buffs.set(cost.buffName, { ...owner, stacks: remaining });
+      else buffs.delete(cost.buffName);
+    }
+  }
+  let working = paysSetup
+    ? state.copy({
+        buffs,
+        toxicity: state.toxicity + (skill.toxicityCost ?? 0),
+        qiDroplets: Math.max(0, state.qiDroplets - (skill.dropletCost ?? 0)),
+      })
+    : state;
+  const context: ActionPhaseContext = {
+    existingBuffNames,
+    successChance,
+    barStart: state,
+    barContributions: [],
+    nativeSource: working,
+  };
+  const paymentCosts = expectedMasteryPayment(
+    working,
+    skill,
+    config,
+    conditionEffects,
+    targetCompletion,
+    currentCondition,
+    targetPerfection,
+    context,
+  );
+  // Mastery effects use the same effect transition, but never pay again, tick
+  // buffs, roll the technique's success, advance time, or resolve harmony.
+  for (const entry of skill.masteryEntries ?? []) {
+    if (entry.kind !== 'effect' || !Array.isArray(entry.effects)) continue;
+    const condition = evaluateMasteryPhaseCondition(
+      entry.condition,
+      working,
+      config,
+      conditionEffects,
+    );
+    if (!condition.met || condition.probability <= 0) continue;
+    const phaseSkill = masteryPhaseSkill(
+      skill,
+      entry.effects as TechniqueEffect[],
+    );
+    working = applySkillTransition(
+      working,
+      phaseSkill,
+      config,
+      conditionEffects,
+      targetCompletion,
+      currentCondition,
+      targetPerfection,
+      { ...context, successChance: condition.probability, masteryPhase: true },
+    )!;
+  }
+  // Keep HEAD's expected-stack approximation for future turns. Only the
+  // current payment uses realized costs, rounded before probability mixing.
+  context.paymentCosts = paymentCosts;
+  const result = applySkillTransition(
+    working,
+    skill,
+    config,
+    conditionEffects,
+    targetCompletion,
+    currentCondition,
+    targetPerfection,
+    context,
+  );
+  return result;
+}
+
+function applySkillTransition(
+  state: CraftingState,
+  skill: SkillDefinition,
+  config: OptimizerConfig,
+  conditionEffects: ConditionEffect[] = [],
+  targetCompletion: number = 0,
+  currentCondition: string | undefined,
+  targetPerfection: number = 0,
+  phase: ActionPhaseContext,
+): CraftingState | null {
+  const maxToxicity = config.maxToxicity || 0;
+  const resolvedActiveBuffs = getResolvedActiveBuffs(state, config);
 
   const isItemAction = skill.actionKind === 'item';
   const consumesTurn = skill.consumesTurn ?? !isItemAction;
@@ -3470,7 +4173,14 @@ export function applySkill(
     Math.max(0, Math.min(qiCap, value));
 
   // Calculate gains BEFORE applying buffs from this skill
-  const gains = calculateSkillGains(state, skill, config, conditionEffects);
+  const gains: SkillGains =
+    !skill.isDisciplinedTouch &&
+    skill.effects?.length &&
+    skill.effects.every((effect) => effect.kind === 'createBuff')
+      ? { completion: 0, perfection: 0, stability: 0 }
+      : calculateSkillGains(state, skill, config, conditionEffects, {
+          successChance: phase.successChance,
+        });
 
   // Action-level scaling variables (carry the 0.7.10 boost stats). Pure over
   // the pre-action state, so they are built up front and shared by the cost
@@ -3516,13 +4226,17 @@ export function applySkill(
   actionVars.critmultiplier += mastery.critMultiplierBonus || 0;
   actionVars.successChanceBonus += mastery.successChanceBonus || 0;
 
-  const effectiveCosts = calculateEffectiveActionCosts(
-    state,
-    skill,
-    config.minStability,
-    conditionEffects,
-    config,
-  );
+  const effectiveCosts =
+    (phase.masteryPhase
+      ? { qiCost: 0, stabilityCost: 0, requiredPostStability: 0 }
+      : phase.paymentCosts) ??
+    calculateEffectiveActionCosts(
+      state,
+      skill,
+      config.minStability,
+      conditionEffects,
+      config,
+    );
   const effectiveQiCost = effectiveCosts.qiCost;
   const effectiveStabilityCost = effectiveCosts.stabilityCost;
 
@@ -3561,14 +4275,6 @@ export function applySkill(
   // `(!i.noMaxStabilityLoss||E7o(e))&&t.stabilityPenalty++` and `D7o`).
   const maxStabilitySealed = hasSealedMaxStabilityBuff(state.buffs);
 
-  // Standard max stability decay: increases penalty by 1 each turn unless skill prevents it
-  if (
-    consumesTurn &&
-    (!skill.preventsMaxStabilityDecay || maxStabilitySealed)
-  ) {
-    newStabilityPenalty++;
-  }
-
   // Cap penalty at initial max stability
   newStabilityPenalty = Math.min(
     newStabilityPenalty,
@@ -3603,15 +4309,12 @@ export function applySkill(
   let newStability = state.stability - effectiveStabilityCost + gains.stability;
 
   // Clamp stability
-  newStability = Math.floor(newStability);
+  if (!phase.paymentCosts) newStability = Math.floor(newStability);
   if (newStability < 0) newStability = 0;
   if (newStability > newMaxStability) newStability = newMaxStability;
 
   // Handle toxicity for alchemy crafting
   let newToxicity = state.toxicity;
-  if (skill.toxicityCost) {
-    newToxicity += skill.toxicityCost;
-  }
   // Apply toxicity cleanse
   if (gains.toxicityCleanse && gains.toxicityCleanse > 0) {
     newToxicity = Math.max(0, newToxicity - gains.toxicityCleanse);
@@ -3686,23 +4389,6 @@ export function applySkill(
     }
   }
 
-  // Consume buff costs
-  if (skill.buffCost) {
-    const buff = resolvedActiveBuffs.get(skill.buffCost.buffName);
-    if (buff) {
-      const have = buff.stacks;
-      const consume = skill.buffCost.consumeAll
-        ? have
-        : Math.min(have, skill.buffCost.amount ?? 0);
-      const remaining = Math.max(0, have - consume);
-      if (remaining > 0) {
-        newBuffs.set(skill.buffCost.buffName, { ...buff, stacks: remaining });
-      } else {
-        newBuffs.delete(skill.buffCost.buffName);
-      }
-    }
-  }
-
   // Process per-turn buff effects (game's doExecuteBuff runs after technique)
   let buffCompletion = 0;
   let buffPerfection = 0;
@@ -3736,50 +4422,7 @@ export function applySkill(
     stacksDelta: number,
     seedVariables?: ScalingVariables,
   ): void => {
-    if (!definition || !Number.isFinite(stacksDelta)) return;
-    const delta = Math.floor(stacksDelta);
-    if (delta === 0) return;
-
-    const buffKey = normalizeBuffName(definition.name);
-    if (!buffKey) return;
-
-    const existing = newBuffs.get(buffKey);
-    const canStack =
-      definition.canStack ?? existing?.definition?.canStack ?? true;
-    const maxStacks = definition.maxStacks ?? existing?.definition?.maxStacks;
-
-    if (existing) {
-      if (!canStack) {
-        return;
-      }
-      let nextStacks = existing.stacks + delta;
-      if (maxStacks !== undefined) {
-        nextStacks = Math.min(nextStacks, maxStacks);
-      }
-      if (nextStacks > 0) {
-        newBuffs.set(buffKey, {
-          ...existing,
-          definition: existing.definition ?? definition,
-          stacks: Math.floor(nextStacks),
-        });
-      } else {
-        newBuffs.delete(buffKey);
-      }
-      return;
-    }
-
-    if (delta > 0) {
-      let nextStacks = delta;
-      if (maxStacks !== undefined) {
-        nextStacks = Math.min(nextStacks, maxStacks);
-      }
-      newBuffs.set(buffKey, {
-        name: buffKey,
-        stacks: Math.floor(nextStacks),
-        definition,
-        internalState: seedBuffInternalState(definition, seedVariables),
-      });
-    }
+    upsertBuffIntoMap(newBuffs, definition, stacksDelta, seedVariables);
   };
 
   const adjustExistingBuffStacks = (
@@ -3804,18 +4447,24 @@ export function applySkill(
     }
   };
 
-  const actionSuccessChance = isItemAction
-    ? 1
-    : Math.max(
-        0,
-        Math.min(1, (skill.successChance ?? 1) + actionVars.successChanceBonus),
-      );
+  const actionSuccessChance =
+    phase.successChance ??
+    (isItemAction
+      ? 1
+      : Math.max(
+          0,
+          Math.min(
+            1,
+            (skill.successChance ?? 1) + actionVars.successChanceBonus,
+          ),
+        ));
 
   // 0.7.7+ triggered buff effects (the runtime `_6` dispatcher). The runtime
   // fires triggers as each change lands - cost payment, technique
   // applications, then per-turn buff effects - so dispatches below run after
   // the technique effects and the buff fold re-reads the mutated state.
-  const triggerBuffsPresent = consumesTurn && hasTriggeredEffectBuffs(newBuffs);
+  const triggerBuffsPresent = hasTriggeredEffectBuffs(newBuffs);
+  const activeTriggers = new Set<string>();
   let runningCompletion = state.completion;
   let runningPerfection = state.perfection;
 
@@ -3824,7 +4473,7 @@ export function applySkill(
     amount: number,
     percentGained: number = 0,
   ): void => {
-    if (!consumesTurn || !Number.isFinite(amount) || amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0) {
       return;
     }
     for (const [buffKey, buff] of Array.from(newBuffs.entries())) {
@@ -3832,61 +4481,31 @@ export function applySkill(
       if (!blocks || blocks.length === 0) {
         continue;
       }
-      let working: Record<string, number> | undefined;
+      const guardKey = `${trigger}:${buffKey}`;
+      if (activeTriggers.has(guardKey)) continue;
+      activeTriggers.add(guardKey);
+      const scope: ScalingVariables = {
+        ...actionVars,
+        roomEffectiveness: 0,
+        pool: newQi,
+        maxpool: qiCap,
+        toxicity: newToxicity,
+        maxtoxicity: config.maxToxicity || 0,
+        ...buff.definition?.additionalVariables,
+        ...buff.internalState,
+        stacks: buff.stacks,
+        amount,
+        percentGained,
+      };
       for (const block of blocks) {
         if (block.trigger !== trigger) {
           continue;
         }
         for (const effect of block.effects ?? []) {
-          // Only setState is valid inside triggered blocks; anything else
-          // would re-enter an effect pipeline the runtime keeps flat.
-          if (!effect || effect.kind !== 'setState' || !effect.key) {
-            continue;
-          }
-          const scope: ScalingVariables = {
-            ...actionVars,
-            pool: newQi,
-            maxpool: qiCap,
-            toxicity: newToxicity,
-            maxtoxicity: config.maxToxicity || 0,
-            poolCostFlat: state.poolCostFlat,
-            poolCostPercentage: state.poolCostPercentage,
-            stabilityCostPercentage: state.stabilityCostPercentage,
-            stacks: buff.stacks,
-            amount,
-            percentGained,
-            ...(working ?? buff.internalState ?? {}),
-          };
-          const conditionResult = evaluateEffectCondition(
-            effect.condition,
-            state,
-            scope,
-            buff.stacks,
-          );
-          if (!conditionResult.met || conditionResult.probability <= 0) {
-            continue;
-          }
-          const value = evaluateScalingWithMasteryUpgrades(
-            effect.value,
-            actionMasteryUpgrades,
-            scope,
-            0,
-          );
-          if (!Number.isFinite(value)) {
-            continue;
-          }
-          // Later effects in the same block read earlier writes (Azure
-          // Depths: `stored` reads the `charge` the previous effect updated).
-          const base = working ?? { ...(buff.internalState ?? {}) };
-          const previousValue = base[effect.key] ?? 0;
-          base[effect.key] =
-            effect.mode === 'add' ? previousValue + value : value;
-          working = base;
+          if (effect) executeBuffEffect(effect, buffKey, buff, scope);
         }
       }
-      if (working) {
-        newBuffs.set(buffKey, { ...buff, internalState: working });
-      }
+      activeTriggers.delete(guardKey);
     }
   };
 
@@ -3967,11 +4586,20 @@ export function applySkill(
     ownerBuff: { name: string; stacks: number; definition?: BuffDefinition },
     scalingVars: ScalingVariables,
   ): void => {
+    const liveOwner = newBuffs.get(ownerBuffKey);
+    if (!liveOwner) return;
+    Object.assign(
+      scalingVars,
+      { roomEffectiveness: 0 },
+      liveOwner.definition?.additionalVariables,
+      liveOwner.internalState,
+      { stacks: liveOwner.stacks },
+    );
     const conditionResult = evaluateEffectCondition(
       effect.condition,
       state,
       scalingVars,
-      ownerBuff.stacks,
+      liveOwner.stacks,
     );
     if (!conditionResult.met || conditionResult.probability <= 0) {
       return;
@@ -4009,12 +4637,12 @@ export function applySkill(
         // True Bifang Flame's blaze).
         if (triggerBuffsPresent && amount > 0) {
           const barAfter = runningCompletion + amount;
+          runningCompletion = barAfter;
           dispatchBuffTriggers(
             'completionGained',
             amount,
             computeTriggerPercentGained(amount, barAfter, targetCompletion),
           );
-          runningCompletion = barAfter;
         }
         break;
       case 'perfection':
@@ -4024,12 +4652,12 @@ export function applySkill(
         }
         if (triggerBuffsPresent && amount > 0) {
           const barAfter = runningPerfection + amount;
+          runningPerfection = barAfter;
           dispatchBuffTriggers(
             'perfectionGained',
             amount,
             computeTriggerPercentGained(amount, barAfter, targetPerfection),
           );
-          runningPerfection = barAfter;
         }
         break;
       case 'stability':
@@ -4104,9 +4732,18 @@ export function applySkill(
         };
         const previousValue = nextInternalState[stateKey] ?? 0;
         nextInternalState[stateKey] =
-          effect.mode === 'add'
-            ? previousValue + stateValue
-            : stateValue;
+          effect.mode === 'add' ? previousValue + stateValue : stateValue;
+        for (const key of effect.keys ?? []) {
+          nextInternalState[key] =
+            effect.mode === 'add'
+              ? (nextInternalState[stateKey] ?? 0) + stateValue
+              : stateValue;
+        }
+        scalingVars[stateKey] = nextInternalState[stateKey];
+        // The runtime iterates indexes here, not the key values.
+        for (const index of Object.keys(effect.keys ?? [])) {
+          scalingVars[index] = nextInternalState[index] ?? 0;
+        }
         newBuffs.set(ownerBuffKey, {
           ...owner,
           internalState: nextInternalState,
@@ -4185,10 +4822,12 @@ export function applySkill(
     for (const [buffKey, buff] of Array.from(newBuffs.entries())) {
       // Triggered effects may have rewritten this buff's internal state
       // already this action, so read the live entry, not the snapshot.
+      if (!phase.existingBuffNames.has(buffKey)) continue;
       const liveBuff = newBuffs.get(buffKey);
       if (!liveBuff?.definition) continue;
       const scalingVars: ScalingVariables = {
         ...actionVars,
+        roomEffectiveness: 0,
         pool: newQi,
         maxpool: qiCap,
         toxicity: newToxicity,
@@ -4196,6 +4835,7 @@ export function applySkill(
         poolCostFlat: state.poolCostFlat,
         poolCostPercentage: state.poolCostPercentage,
         stabilityCostPercentage: state.stabilityCostPercentage,
+        ...liveBuff.definition.additionalVariables,
         stacks: liveBuff.stacks,
       };
       // 0.7.7+ buffs read trigger-written internal state from their eqns
@@ -4207,12 +4847,6 @@ export function applySkill(
           if (typeof stateValue === 'number' && Number.isFinite(stateValue)) {
             scalingVars[stateKey] = stateValue;
           }
-        }
-      }
-      // Execute per-turn effects
-      if (liveBuff.definition.effects) {
-        for (const effect of liveBuff.definition.effects) {
-          executeBuffEffect(effect, buffKey, liveBuff, scalingVars);
         }
       }
       // Execute action-type-specific effects
@@ -4230,6 +4864,9 @@ export function applySkill(
         for (const effect of actionEffects) {
           executeBuffEffect(effect, buffKey, liveBuff, scalingVars);
         }
+      }
+      for (const effect of liveBuff.definition.effects ?? []) {
+        executeBuffEffect(effect, buffKey, liveBuff, scalingVars);
       }
     }
 
@@ -4321,7 +4958,7 @@ export function applySkill(
     !isItemAction &&
     config.isSublimeCraft &&
     config.craftingType &&
-    state.harmonyData
+    (state.harmonyData || config.craftingType === 'returningCycle')
   ) {
     // 0.7.6 scores Eccentric Decree from inside every completion/perfection
     // application, so replay this turn's applications in the runtime's order:
@@ -4337,16 +4974,23 @@ export function applySkill(
               gains.perfection,
             )
           : synthesizeBarContributions(gains.completion, gains.perfection);
-      barChanges = buildBarChangeEvents(state.completion, state.perfection, [
-        ...techniqueBarContributions,
-        ...buffBarContributions,
-      ]);
+      barChanges = buildBarChangeEvents(
+        phase.barStart.completion,
+        phase.barStart.perfection,
+        [
+          ...phase.barContributions,
+          ...techniqueBarContributions,
+          ...buffBarContributions,
+        ],
+      );
     }
     const harmonyResult = processHarmonyEffect(
-      state.harmonyData,
+      state.harmonyData ?? { recommendedTechniqueTypes: [] },
       config.craftingType,
       skill.type,
       {
+        poolCost: effectiveQiCost,
+        startingMaxPool: config.maxQi,
         completion: newCompletion,
         perfection: newPerfection,
         maxCompletion: config.maxCompletion ?? newCompletion,
@@ -4376,6 +5020,17 @@ export function applySkill(
     if (harmonyResult.poolDelta !== 0) {
       newQi = clampQi(newQi + harmonyResult.poolDelta);
     }
+    if (config.craftingType === 'returningCycle') {
+      // G:540988-540991: direct drain bypasses spend triggers, then normal
+      // cleanup floors and caps the pool. Precision arrives after buff ticking.
+      newQi = clampQi(Math.floor(newQi));
+      if (harmonyResult.precisionStacksAdded) {
+        upsertBuffFromDefinition(
+          RETURNED_PRECISION,
+          harmonyResult.precisionStacksAdded,
+        );
+      }
+    }
     if (harmonyResult.stabilityPenaltyDelta !== 0) {
       newStabilityPenalty += harmonyResult.stabilityPenaltyDelta;
       newStabilityPenalty = Math.min(
@@ -4389,46 +5044,82 @@ export function applySkill(
   }
 
   // Create new state with all updates
+  if (
+    consumesTurn &&
+    (!skill.preventsMaxStabilityDecay || hasSealedMaxStabilityBuff(newBuffs))
+  ) {
+    newStabilityPenalty++;
+  }
+  // Preserve the mean of chance-weighted penalties instead of rounding that
+  // mean again (15% of a 3-point loss is 0.45, not a whole point).
+  newStabilityPenalty = Math.min(
+    state.initialMaxStability,
+    Math.max(0, newStabilityPenalty),
+  );
+  newStability = clampStabilityToBounds(
+    newStability,
+    state.initialMaxStability - newStabilityPenalty,
+  );
+  if (recordBarChanges && !consumesTurn) {
+    phase.barContributions.push(
+      ...(gains.barContributions?.length
+        ? scaleBarContributions(
+            gains.barContributions,
+            gains.completion,
+            gains.perfection,
+          )
+        : synthesizeBarContributions(gains.completion, gains.perfection)),
+      ...buffBarContributions,
+    );
+  }
   const nextConsumedPillsThisTurn = consumesTurn
     ? 0
     : state.consumedPillsThisTurn + (isItemAction ? 1 : 0);
-  const propagatedMaxPool = getEffectiveMaxPool(
-    state.copy({
-      qi: newQi,
-      stability: newStability,
-      stabilityPenalty: newStabilityPenalty,
-      completion: newCompletion,
-      perfection: newPerfection,
-      toxicity: newToxicity,
-      buffs: newBuffs,
-      harmonyData: newHarmonyData,
-      completionBonus: newCompletionBonus,
-    }),
-    config,
-    newBuffs,
-  );
-  const propagatedNativeVariables = propagateNativeVariablesAfterAction(
-    state,
-    {
-      qi: newQi,
-      maxPool: propagatedMaxPool,
-      completion: newCompletion,
-      perfection: newPerfection,
-      stability: newStability,
-      maxStability: state.initialMaxStability - newStabilityPenalty,
-      stabilityPenalty: newStabilityPenalty,
-      toxicity: newToxicity,
-      consumedPillsThisTurn: nextConsumedPillsThisTurn,
-      step: nextStep,
-    },
-    newBuffs,
-    newHarmonyData,
-    maxToxicity,
-    config.pillsPerRound || 1,
-  );
+  const propagatedMaxPool = buffsCanChangeMaxPool(newBuffs)
+    ? getEffectiveMaxPool(
+        state.copy({
+          qi: newQi,
+          stability: newStability,
+          stabilityPenalty: newStabilityPenalty,
+          completion: newCompletion,
+          perfection: newPerfection,
+          toxicity: newToxicity,
+          buffs: newBuffs,
+          harmonyData: newHarmonyData,
+          completionBonus: newCompletionBonus,
+        }),
+        config,
+        newBuffs,
+      )
+    : Math.max(1, config.maxQi);
+  // No pre-payment phase reads nativeVariables: only the initial availability
+  // gate and the completed action's export use them. Refresh aliases once at
+  // that boundary, including names removed by mastery effects, not per mastery.
+  const propagatedNativeVariables = phase.masteryPhase
+    ? state.nativeVariables
+    : propagateNativeVariablesAfterAction(
+        phase.nativeSource ?? state,
+        {
+          qi: newQi,
+          maxPool: propagatedMaxPool,
+          completion: newCompletion,
+          perfection: newPerfection,
+          stability: newStability,
+          maxStability: state.initialMaxStability - newStabilityPenalty,
+          stabilityPenalty: newStabilityPenalty,
+          toxicity: newToxicity,
+          consumedPillsThisTurn: nextConsumedPillsThisTurn,
+          step: nextStep,
+        },
+        newBuffs,
+        newHarmonyData,
+        maxToxicity,
+        config.pillsPerRound || 1,
+      );
 
   return state.copy({
     qi: newQi,
+    qiDroplets: state.qiDroplets,
     stability: newStability,
     stabilityPenalty: newStabilityPenalty,
     completion: newCompletion,
@@ -4447,7 +5138,9 @@ export function applySkill(
     step: nextStep,
     completionBonus: newCompletionBonus,
     nativeVariables: propagatedNativeVariables,
-    history: [...state.history, skill.name],
+    history: phase.masteryPhase
+      ? phase.barStart.history
+      : [...phase.barStart.history, skill.name],
   });
 }
 

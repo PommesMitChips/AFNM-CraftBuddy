@@ -101,6 +101,20 @@ struct MctsInput {
 #[derive(Clone, Debug, Default, Deserialize)]
 struct EngineState {
     #[serde(default)]
+    item_effectiveness: f64,
+    #[serde(default)]
+    qi_droplets: f64,
+    #[serde(default)]
+    max_qi_droplets: f64,
+    #[serde(default)]
+    qi_cost_reduction: Option<f64>,
+    #[serde(default)]
+    qi_cost_penalty: Option<f64>,
+    #[serde(default)]
+    stability_cost_reduction: Option<f64>,
+    #[serde(default)]
+    stability_cost_penalty: Option<f64>,
+    #[serde(default)]
     qi: f64,
     #[serde(default)]
     stability: f64,
@@ -231,6 +245,10 @@ struct EngineConfig {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 struct EngineSkill {
+    #[serde(default)]
+    droplet_cost: f64,
+    #[serde(default)]
+    no_qi_cost: bool,
     name: String,
     key: String,
     #[serde(default)]
@@ -344,6 +362,8 @@ struct HarmonyData {
     #[serde(default)]
     captivating_cadence: Option<CaptivatingCadenceData>,
     #[serde(default)]
+    returning_cycle: Option<ReturningCycleData>,
+    #[serde(default)]
     recommended_technique_types: Vec<String>,
     #[serde(default)]
     alchemical_reaction_modifiers: Option<HarmonyStatModifiers>,
@@ -351,6 +371,28 @@ struct HarmonyData {
     /// game-authored formulas as scaling variables.
     #[serde(default)]
     additional_data: std::collections::BTreeMap<String, f64>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ReturningCycleData {
+    #[serde(default = "invalid_cycle_number", deserialize_with = "cycle_number")]
+    charges: f64,
+    #[serde(default = "invalid_cycle_number", deserialize_with = "cycle_number")]
+    stored_qi: f64,
+    #[serde(default = "invalid_cycle_number", deserialize_with = "cycle_number")]
+    charge_size: f64,
+    #[serde(default)]
+    pulse_key: Option<f64>,
+    #[serde(default)]
+    last_outcome: Option<String>,
+}
+
+fn invalid_cycle_number() -> f64 {
+    f64::NAN
+}
+
+fn cycle_number<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
+    Ok(Option::<f64>::deserialize(deserializer)?.unwrap_or(f64::NAN))
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -464,6 +506,7 @@ impl Default for HarmonyStatModifiers {
 
 #[derive(Clone, Copy, Debug)]
 struct HarmonyEffectResult {
+    precision_stacks_added: f64,
     #[allow(dead_code)]
     modifiers: HarmonyStatModifiers,
     harmony_delta: f64,
@@ -502,6 +545,8 @@ struct BarChange {
 /// and the search hot path does not allocate per node.
 #[derive(Clone, Copy, Debug, Default)]
 struct HarmonyProcessContext<'a> {
+    pool_cost: f64,
+    starting_max_pool: f64,
     completion: f64,
     perfection: f64,
     max_completion: f64,
@@ -1815,7 +1860,9 @@ fn process_harmony_effect(
         "enhancingEcho" => process_enhancing_echo(harmony_data, technique_type),
         "eccentricDecree" => process_eccentric_decree(harmony_data, context),
         "captivatingCadence" => process_captivating_cadence(harmony_data, technique_type),
+        "returningCycle" => process_returning_cycle(harmony_data, technique_type, context),
         _ => HarmonyEffectResult {
+            precision_stacks_added: 0.0,
             modifiers: HarmonyStatModifiers::default(),
             harmony_delta: 0.0,
             harmony_override: None,
@@ -1826,11 +1873,69 @@ fn process_harmony_effect(
     }
 }
 
+fn process_returning_cycle(
+    harmony_data: &mut HarmonyData,
+    technique_type: &str,
+    context: HarmonyProcessContext<'_>,
+) -> HarmonyEffectResult {
+    let valid = harmony_data.returning_cycle.as_ref().is_some_and(|cycle| {
+        cycle.charges.is_finite()
+            && cycle.stored_qi.is_finite()
+            && cycle.charge_size.is_finite()
+            && cycle.charge_size > 0.0
+    });
+    if !valid {
+        harmony_data.returning_cycle = Some(ReturningCycleData {
+            charges: 0.0,
+            stored_qi: 0.0,
+            charge_size: (context.starting_max_pool * 0.1).max(1.0),
+            pulse_key: None,
+            last_outcome: None,
+        });
+    }
+    let cycle = harmony_data.returning_cycle.as_mut().unwrap();
+    cycle.pulse_key = Some(cycle.pulse_key.unwrap_or(0.0) + 1.0);
+    cycle.stored_qi += context.pool_cost.max(0.0);
+    let earned = ((cycle.stored_qi + cycle.charge_size * 1e-9) / cycle.charge_size).floor();
+    cycle.last_outcome = Some(if earned > 0.0 { "charge" } else { "drain" }.to_string());
+    if earned > 0.0 {
+        cycle.charges += earned;
+        cycle.stored_qi = (cycle.stored_qi - earned * cycle.charge_size).max(0.0);
+    }
+    let held = cycle.charges;
+    let mut harmony_delta = if held > 0.0 { -3.0 * held } else { 0.0 };
+    let pool_delta = if held > 0.0 {
+        -held * cycle.charge_size * (0.03 / 0.1)
+    } else {
+        0.0
+    };
+    let mut precision_stacks_added = 0.0;
+    if technique_type == "stabilize" {
+        cycle.charges = 0.0;
+        cycle.last_outcome = Some("release".to_string());
+        if held > 0.0 {
+            harmony_delta += 10.0 * held;
+            precision_stacks_added = 5.0 * held;
+        }
+    }
+    harmony_data.recommended_technique_types.clear();
+    HarmonyEffectResult {
+        precision_stacks_added,
+        harmony_delta,
+        pool_delta,
+        modifiers: HarmonyStatModifiers::default(),
+        harmony_override: None,
+        stability_delta: 0.0,
+        stability_penalty_delta: 0.0,
+    }
+}
+
 /// Formless Way has no sub-system state: it pins harmony at its peak every
 /// action and pays for it with a 1.5x complexity multiplier on the targets.
 fn process_formless(harmony_data: &mut HarmonyData) -> HarmonyEffectResult {
     harmony_data.recommended_technique_types.clear();
     HarmonyEffectResult {
+        precision_stacks_added: 0.0,
         modifiers: HarmonyStatModifiers::default(),
         harmony_delta: 0.0,
         harmony_override: Some(FORMLESS_HARMONY),
@@ -1874,6 +1979,7 @@ fn process_enhancing_echo(
         .unwrap_or_default();
     harmony_data.enhancing_echo = Some(echo);
     HarmonyEffectResult {
+        precision_stacks_added: 0.0,
         modifiers: HarmonyStatModifiers::default(),
         harmony_delta,
         harmony_override: None,
@@ -1973,6 +2079,7 @@ fn process_eccentric_decree(
     };
     harmony_data.eccentric_decree = Some(decree);
     HarmonyEffectResult {
+        precision_stacks_added: 0.0,
         modifiers,
         harmony_delta,
         harmony_override: None,
@@ -2027,6 +2134,7 @@ fn process_captivating_cadence(
     harmony_data.captivating_cadence = Some(cadence);
 
     HarmonyEffectResult {
+        precision_stacks_added: 0.0,
         modifiers,
         harmony_delta,
         harmony_override: None,
@@ -2079,6 +2187,7 @@ fn process_forge(harmony_data: &mut HarmonyData, technique_type: &str) -> Harmon
         ForgeHeatBand::Neutral => 0.0,
     };
     HarmonyEffectResult {
+        precision_stacks_added: 0.0,
         modifiers: forge_modifiers(effective_forge_heat(harmony_data.forge_works.as_ref())),
         harmony_delta,
         harmony_override: None,
@@ -2101,6 +2210,7 @@ fn process_alchemical(harmony_data: &mut HarmonyData, technique_type: &str) -> H
         harmony_data.recommended_technique_types = next_valid_alchemical_charges(&arts.charges);
         harmony_data.alchemical_arts = Some(arts);
         return HarmonyEffectResult {
+            precision_stacks_added: 0.0,
             modifiers,
             harmony_delta,
             harmony_override: None,
@@ -2128,6 +2238,7 @@ fn process_alchemical(harmony_data: &mut HarmonyData, technique_type: &str) -> H
     harmony_data.recommended_technique_types.clear();
     harmony_data.alchemical_arts = Some(arts);
     HarmonyEffectResult {
+        precision_stacks_added: 0.0,
         modifiers,
         harmony_delta,
         harmony_override: None,
@@ -2177,6 +2288,7 @@ fn process_inscription(
     harmony_data.recommended_technique_types = patterns.current_block.clone();
     harmony_data.inscribed_patterns = Some(patterns);
     HarmonyEffectResult {
+        precision_stacks_added: 0.0,
         modifiers,
         harmony_delta,
         harmony_override: None,
@@ -2243,6 +2355,7 @@ fn process_resonance(harmony_data: &mut HarmonyData, technique_type: &str) -> Ha
         .unwrap_or_default();
     harmony_data.resonance = Some(resonance);
     HarmonyEffectResult {
+        precision_stacks_added: 0.0,
         modifiers,
         harmony_delta,
         harmony_override: None,
@@ -3114,6 +3227,8 @@ mod tests {
             "eccentricDecree",
             "fusion",
             HarmonyProcessContext {
+                pool_cost: 0.0,
+                starting_max_pool: 0.0,
                 completion: 120.0,
                 perfection: 0.0,
                 max_completion: 1000.0,
@@ -3144,6 +3259,8 @@ mod tests {
             "eccentricDecree",
             "fusion",
             HarmonyProcessContext {
+                pool_cost: 0.0,
+                starting_max_pool: 0.0,
                 completion: 40.0,
                 perfection: 0.0,
                 max_completion: 1000.0,
@@ -3180,6 +3297,8 @@ mod tests {
             "eccentricDecree",
             "fusion",
             HarmonyProcessContext {
+                pool_cost: 0.0,
+                starting_max_pool: 0.0,
                 completion: 40.0,
                 perfection: 30.0,
                 max_completion: 1000.0,
@@ -3223,6 +3342,8 @@ mod tests {
             "eccentricDecree",
             "fusion",
             HarmonyProcessContext {
+                pool_cost: 0.0,
+                starting_max_pool: 0.0,
                 completion: 100.0,
                 perfection: 30.0,
                 max_completion: 1000.0,
@@ -3268,6 +3389,8 @@ mod tests {
             "eccentricDecree",
             "fusion",
             HarmonyProcessContext {
+                pool_cost: 0.0,
+                starting_max_pool: 0.0,
                 completion: 500.0,
                 perfection: 0.0,
                 max_completion: 120.0,
@@ -3303,6 +3426,8 @@ mod tests {
             "eccentricDecree",
             "fusion",
             HarmonyProcessContext {
+                pool_cost: 0.0,
+                starting_max_pool: 0.0,
                 completion: 1.0,
                 perfection: 0.0,
                 max_completion: 1000.0,
@@ -3330,6 +3455,8 @@ mod tests {
     #[test]
     fn eccentric_decree_falls_back_to_the_single_end_of_turn_delta() {
         let context = HarmonyProcessContext {
+            pool_cost: 0.0,
+            starting_max_pool: 0.0,
             completion: 40.0,
             perfection: 30.0,
             max_completion: 1000.0,
@@ -3469,4 +3596,3 @@ mod tests {
         assert_eq!(cad3.last_outcome.as_deref(), Some("break"));
     }
 }
-

@@ -3,8 +3,8 @@ title: Testing Guide
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.10-9bf9078
-last_verified: 2026-09-01
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
 source_of_truth: src/__tests__/*, crates/craftbuddy-engine/*, package.json, scripts/docs/*, scripts/installed-game-runtime.js
 review_cycle_days: 30
 related_files:
@@ -20,7 +20,7 @@ related_files:
 
 See `AGENTS.md` for the compact command list. Key commands:
 
-- `bun run test` — full suite, currently **929 tests across 35 suites** (slow: `craftSimulation.test.ts` alone is ~230 s)
+- `bun run test` — full suite (budget several minutes; current counts belong in `RELEASE_NOTES_6.8.0.md`)
 - `bun run wasm:test` — Rust unit, effect-parity, and differential-corpus tests
 - `bun run wasm:build` — compile the Rust engine and generate the inline WASM module
 - `bun run optimizer:differential-corpus` — regenerate the cross-engine corpus
@@ -45,7 +45,10 @@ For validation workflow and which checks to run per change area, load the `pre-c
 | `outcome.test.ts` | Band widths, tier conjunction, `willAutoFinish` |
 | `outcomeProjection.test.ts` | The `OutcomeProjection` attached to every `SearchResult` |
 | `outcomeSummary.test.ts` | Display-row derivation from a projection, including the legacy no-projection path |
-| `harmonyRegistry.test.ts` | Seven harmony definitions, complexity multipliers, normalization |
+| `harmonyRegistry.test.ts` | Nine harmony definitions, complexity multipliers, normalization |
+| `runtime0717.test.ts` | 0.7.17 payment phases/cost channels, droplets, mastery chance branches, general triggers and buff timing |
+| `returningCycle.test.ts` | Accrual/failure/drain/release, precision decay, invalid state and hydration/replay/native bridge |
+| `replaySnapshotRetarget.test.ts` | Historical replay inputs survive the 0.7.17 state retarget |
 | `runtimeParity.test.ts` | Runtime-verified behaviours such as Fallen Soulflame fragment triggers |
 | `engineDifferential.test.ts` | TypeScript side of the cross-engine differential corpus |
 | `nativeAutoUse.test.ts` | Loadout status reading, covered items, slot projection, toxicity ceiling, training mode |
@@ -98,15 +101,17 @@ Because search is wall-clock-budgeted, CI/browser/live runs can reach different 
 
 ## Cross-engine differential testing
 
-The corpus (`src/__tests__/fixtures/differentialCorpus.ts` → `crates/craftbuddy-engine/tests/differential_corpus.json`) is the parity contract between the TypeScript simulator and the Rust engine: schema v2, **134 scenarios / 1,432 transitions**, asserting scalar state plus the active-buff set, `items`, `consumedPillsThisTurn`, and a `harmonyData` digest.
+The corpus (`src/__tests__/fixtures/differentialCorpus.ts` → `crates/craftbuddy-engine/tests/differential_corpus.json`) is the parity contract between the TypeScript simulator and the Rust engine: schema v4, **177 scenarios / 1,554 cases** (1,352 legal transitions, 202 rejected actions), asserting scalar state including droplets/cap and additive item effectiveness, the active-buff set with internal state, `items`, `consumedPillsThisTurn`, and a `harmonyData` digest including Returning Cycle.
 
 Rules:
 
 - Any mechanics change means regenerating with `bun run optimizer:differential-corpus` and running **both** sides (`bun run jest src/__tests__/engineDifferential.test.ts` and `bun run wasm:test`).
 - Never hand-edit the JSON; it is generated.
-- The Rust crate reports **64 passing tests**; the 3 profiling tests are `#[ignore]`d and run explicitly (see `docs/project/ENGINE_PERFORMANCE.md`).
+- The 3 profiling tests are intentionally `#[ignore]`d and run explicitly (see `docs/project/ENGINE_PERFORMANCE.md`); ordinary test counts are recorded per release.
 - Add a scenario per newly modelled mechanic before porting it, not after.
 - Parity is only claimed when the whole corpus passes on both sides.
+- Keep the seeded random harmony pool stable when the registry grows; cover new types with explicit matrices/edge cases rather than remapping old random inputs.
+- Final recorded-corpus checks must run without a scratch `CRAFTBUDDY_DIFFERENTIAL_INPUT` override. The generator reports all cases; Rust's compared-transition count excludes illegal actions.
 
 ## Native MCTS testing
 

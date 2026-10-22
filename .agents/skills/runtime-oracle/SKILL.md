@@ -5,7 +5,9 @@ description: Verify CraftBuddy assumptions against the installed AFNM runtime. A
 
 # Runtime Oracle
 
-Use the installed AFNM bundle before trusting docs, types, historical notes, or screenshots. Current target: **0.7.10**.
+Use the installed AFNM bundle before trusting docs, types, historical notes, or screenshots. Current target: **0.7.17-d8ae6ce**.
+
+The 0.7.17 phase/cost/droplet audit, Returning Cycle and named buff changes are already recorded in `RUNTIME_EVIDENCE.md` §17. Its initial-gap descriptions are pre-implementation evidence, not outstanding work. Selective ASAR extraction normalizes both slash styles before matching entries; do not restore whole-archive extraction for large installs.
 
 ## Commands
 

@@ -46,7 +46,8 @@ function extractRuntime(asarPath, extractDir) {
 
   const asar = require('@electron/asar');
   const list = asar.listPackage(asarPath);
-  for (const f of list) {
+  for (const entry of list) {
+    const f = entry.replace(/\\/g, '/');
     if (f === '/package.json' || f.startsWith('/dist-electron/')) {
       if (f.match(/\.(png|webp|jpg|jpeg|ogg|mp3|wav|webm|otf|ttf)$/i)) continue;
       const rel = f.replace(/^\//, '');
@@ -131,10 +132,14 @@ function extractSummary(extractDir, gameDir, asarPath) {
     modApi: {
       hasRootStateSubscribe:
         runtimeText.includes('subscribe:e=>{let t=window.gameStore') ||
-        (runtimeText.includes('subscribe:') && runtimeText.includes('gameStore.subscribe')),
+        (runtimeText.includes('subscribe:') &&
+          runtimeText.includes('gameStore.subscribe')),
       hasRootStateSnapshot:
-        runtimeText.includes('getGameStateSnapshot:()=>window.gameStore?.getState()??null') ||
-        (runtimeText.includes('getGameStateSnapshot:') && runtimeText.includes('gameStore')),
+        runtimeText.includes(
+          'getGameStateSnapshot:()=>window.gameStore?.getState()??null',
+        ) ||
+        (runtimeText.includes('getGameStateSnapshot:') &&
+          runtimeText.includes('gameStore')),
       hasInjectUI: runtimeText.includes('injectUI:('),
       hasOnReduxActionHook: runtimeText.includes('onReduxAction:'),
       hasHarmonyConfigs: gameJs.includes('harmonyConfigs'),

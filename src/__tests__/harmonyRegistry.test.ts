@@ -29,10 +29,11 @@ const EXPECTED_COMPLEXITY: Record<HarmonyType, number> = {
   enhancingEcho: 1.3,
   eccentricDecree: 1,
   captivatingCadence: 1.5,
+  returningCycle: 1.3,
 };
 
 describe('harmony registry', () => {
-  it('exposes all eight harmony types', () => {
+  it('exposes all nine harmony types', () => {
     expect(HARMONY_TYPES).toEqual([
       'forge',
       'alchemical',
@@ -42,6 +43,7 @@ describe('harmony registry', () => {
       'enhancingEcho',
       'eccentricDecree',
       'captivatingCadence',
+      'returningCycle',
     ]);
   });
 
@@ -99,7 +101,9 @@ describe('harmony registry', () => {
       expect(applyComplexityMultiplier(175, 'inscription', true)).toBe(158);
       expect(applyComplexityMultiplier(175, 'resonance', true)).toBe(228);
       expect(applyComplexityMultiplier(175, 'eccentricDecree', true)).toBe(175);
-      expect(applyComplexityMultiplier(175, 'captivatingCadence', true)).toBe(263);
+      expect(applyComplexityMultiplier(175, 'captivatingCadence', true)).toBe(
+        263,
+      );
     });
 
     it('only applies to sublime crafts', () => {
@@ -120,7 +124,10 @@ describe('harmony registry', () => {
   describe('starting harmony', () => {
     it('uses the harmony definition for sublime crafts', () => {
       expect(
-        resolveStartingHarmony({ harmonyType: 'formless', isSublimeCraft: true }),
+        resolveStartingHarmony({
+          harmonyType: 'formless',
+          isSublimeCraft: true,
+        }),
       ).toBe(33);
       expect(
         resolveStartingHarmony({ harmonyType: 'forge', isSublimeCraft: true }),

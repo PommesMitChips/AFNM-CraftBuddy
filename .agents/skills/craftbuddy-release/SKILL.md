@@ -25,9 +25,9 @@ Update both version strings together:
 3. Commit the release changes, then push `main`.
 4. Upload to Workshop item `3661729323`:
    ```bash
-   bun run workshop:upload -- --change-note "vX.Y.Z - What changed"
+   bun run workshop:upload -- --change-note "vX.Y.Z - What changed" --description-file docs/project/WORKSHOP_DESCRIPTION.md
    ```
-   Add `--description-file docs/project/WORKSHOP_DESCRIPTION.md` only when public Workshop copy changes.
+   Description sync is explicit. When public copy is unchanged, omit `--description-file`; the wrapper then leaves the existing Workshop description alone.
 5. Push tag `vX.Y.Z` to trigger `.github/workflows/release.yml` and GitHub Release artifact upload.
 6. Confirm package version, tag, Workshop note, and uploaded zip all match.
 

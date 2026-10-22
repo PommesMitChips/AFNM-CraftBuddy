@@ -3,8 +3,8 @@ title: Rust Engine Performance and Neutrality Evidence
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.6-7c586da
-last_verified: 2026-07-27
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
 source_of_truth: crates/craftbuddy-engine/src/profile_tests.rs, crates/craftbuddy-engine/src/profiling.rs, crates/craftbuddy-engine/src/effects.rs, scripts/optimizer/benchmark-engines.ts
 review_cycle_days: 90
 related_files:
@@ -17,15 +17,25 @@ related_files:
 
 # Rust Engine Performance and Neutrality Evidence
 
-Measurements behind the Rust engine's performance work, current target AFNM **0.7.6-7c586da**. Every number here was produced on this repository; nothing is estimated. Read this before proposing another engine optimization — two of the obvious candidates have already been measured and rejected with data.
+Measurements behind the engine's performance work, current target AFNM **0.7.17-d8ae6ce**. The 6.0.0/6.1.0 numbers below are retained historical measurements, not new speed claims for 0.7.17. Read this before proposing another engine optimization — two obvious candidates were measured and rejected with data.
 
 **The filename carries no version on purpose.** This file used to be `ENGINE_PERFORMANCE_075.md`. The targeted build now lives in the `game_version` frontmatter field, so a future game patch means editing this file's numbers, not renaming it and leaving a stale copy behind.
 
-The measurement baseline is the **6.0.0** run below. It is deliberately kept rather than overwritten: it is the comparison point every later change is judged against.
+The Rust optimization baseline is the **6.0.0** run below. It is deliberately kept rather than overwritten. The current TypeScript retarget measurement follows separately.
+
+## 6.8.0: 0.7.17 TypeScript transition throughput
+
+Fixed-node transition probing measured pre-retarget HEAD at **0.405737 ms/node**. Correct phase/cost handling initially cost **2.115 ms/node**; removing repeated payment/scaling work reduced that to **0.646**, then **0.569423 ms/node** without changing transitions. After Returning Cycle, repeat probes measured **0.591207 / 0.579968 ms/node** (+3.8% / +1.9% against the 0.569423 post-phase baseline). The remaining ~0.58 versus ~0.41 ms/node cost belongs to the 0.7.17 phase/cost model, not a scoring change. These are local measurements, not universal hardware guarantees.
+
+The heat-one `forge-heat-runway-step-3` benchmark's 1 s `legacy_instant` run reached only depth 5 (3,242 nodes), choosing support at that contested frontier; the other six presets reached depth 6 and chose fusion. Its approved fixture-only budget is therefore **6,000 nodes**, with a 120 s wall-clock guard, retaining every assertion and preset beam/MCTS setting. Runtime/user settings are unchanged.
+
+The resonance fixture retains `mustNotRecommend: ['explosive_fusion']`. Its handwritten runner-up ordering clause was removed after the 0.7.17 pre-action-name tick rule explained a 6.37% inversion; restoring old ticking reproduced HEAD scores. That is a runtime-evidenced contract correction, not a changed tolerance. No scoring constants changed. See `RUNTIME_EVIDENCE.md` §17.3 and `MECHANICS_PARITY.md`.
+
+## Historical Rust profiling (6.0.0 / 6.1.0)
 
 ## How to reproduce
 
-No `perf`, `valgrind` or `rustup` is available in the development container, so profiling lives in the crate itself as three `#[ignore]`d tests plus a Cargo-feature-gated counter module (`profiling` — compiled out by default and never enabled for the WASM artefact).
+At the original measurement, no `perf`, `valgrind` or `rustup` was available in the development container, so profiling lived in the crate itself as three `#[ignore]`d tests plus a Cargo-feature-gated counter module (`profiling` — compiled out by default and never enabled for the WASM artefact).
 
 ```bash
 # Real production-shaped payloads: dumps buildNativeMctsInput for all 14 replay
@@ -153,6 +163,6 @@ The MCTS-enabled configs pay 6-8% of their nodes for a prior they were not getti
 
 `normalize_distribution` merged the generated condition distribution through a `HashMap`, so the probability total was summed in hash order _and_ exact ties (`positive` vs `negative` at harmony 0) were broken by hash order. Two of eight identical runs of `forge-heat-runway-step-3` produced a different policy.
 
-Rewritten as an insertion-ordered merge mirroring `normalizeConditionDistribution` in `src/optimizer/search.ts`. A non-deterministic recommender cannot be regression-tested at all, so the property is now guarded directly by `differential_tests::mcts_search_is_deterministic`, which re-runs all corpus scenarios twice and compares the serialized results (~15 s debug). The corpus is currently 134 scenarios / 1,432 transitions.
+Rewritten as an insertion-ordered merge mirroring `normalizeConditionDistribution` in `src/optimizer/search.ts`. A non-deterministic recommender cannot be regression-tested at all, so the property is guarded directly by `differential_tests::mcts_search_is_deterministic`, which re-runs all corpus scenarios twice and compares the serialized results (~15 s debug at that gate). That gate's corpus was 134 scenarios / 1,432 cases.
 
-The crate's own suite reports **64 passing tests**, plus the 3 `#[ignore]`d profiling tests listed under "How to reproduce" (67 defined in total).
+The 6.1.0 crate gate reported **64 passing tests**, plus the 3 `#[ignore]`d profiling tests listed under "How to reproduce" (67 defined in total). Current results belong in the current release notes, not this historical measurement.

@@ -59,6 +59,625 @@ fn minimal_skill(key: &str) -> serde_json::Value {
     json!({ "name": key, "key": key, "technique_type": "refine", "action_kind": "skill" })
 }
 
+fn apply_0717(
+    state: &EngineState,
+    subject: EngineSkill,
+    config: &EngineConfig,
+) -> Option<EngineState> {
+    let skills = vec![subject];
+    let env = ActionEnv {
+        config,
+        skills: &skills,
+    };
+    apply_skill(
+        &env,
+        state,
+        0,
+        &skills[0],
+        "neutral",
+        ConditionEffectSummary::default(),
+        100.0,
+    )
+}
+
+#[test]
+fn review_fractional_cost_channels_do_not_apply_a_legacy_floor() {
+    let mut state = base_state();
+    state.qi_cost_reduction = Some(15.5);
+    state.stability_cost_reduction = Some(15.5);
+    state.pool_cost_percentage = 84.5;
+    state.stability_cost_percentage = 84.5;
+    state.buffs = serde_json::from_value(json!([{"key": "discount", "stacks": 1, "definition": {
+        "name": "Discount", "effects": [], "stats": {"qiCostReduction": {"value": 10}, "stabilityCostReduction": {"value": 10}}
+    }}])).unwrap();
+    let subject = skill(merge(
+        minimal_skill("cost"),
+        json!({"qi_cost": 200, "stability_cost": 200}),
+    ));
+    let config = base_config();
+    let skills = vec![subject.clone()];
+    let env = ActionEnv {
+        config: &config,
+        skills: &skills,
+    };
+    let active = resolve_active_buffs(&state, &config, &skills);
+    let costs = calculate_effective_action_costs(
+        &env,
+        &state,
+        &subject,
+        ConditionEffectSummary::default(),
+        &active,
+    );
+    assert_eq!((costs.qi_cost, costs.stability_cost), (152.0, 152.0));
+    for (stats, expected) in [
+        (json!({"poolCostFlat": {"value": 0}}), (169.0, 169.0)),
+        (json!({"poolCostPercentage": {"value": 80}}), (134.0, 169.0)),
+        (
+            json!({"stabilityCostPercentage": {"value": 80}}),
+            (169.0, 134.0),
+        ),
+    ] {
+        state.buffs = serde_json::from_value(json!([{"key": "cost", "stacks": 1, "definition": {
+            "name": "Cost", "effects": [], "stats": stats
+        }}]))
+        .unwrap();
+        let active = resolve_active_buffs(&state, &config, &skills);
+        let costs = calculate_effective_action_costs(
+            &env,
+            &state,
+            &subject,
+            ConditionEffectSummary::default(),
+            &active,
+        );
+        assert_eq!((costs.qi_cost, costs.stability_cost), expected);
+    }
+}
+
+#[test]
+fn review_calming_mind_pill_uses_live_additive_item_effectiveness() {
+    for (base, boost, stacks) in [
+        (0.0, 0.0, 4),
+        (50.0, 0.0, 6),
+        (-50.0, 0.0, 2),
+        (50.0, 50.0, 8),
+    ] {
+        let mut state = base_state();
+        state.item_effectiveness = base;
+        state.items =
+            serde_json::from_value(json!([{"key": "calming_mind_pill", "count": 1}])).unwrap();
+        state.buffs = serde_json::from_value(json!([{"key": "item_boost", "stacks": 1, "definition": {
+            "name": "Item boost", "effects": [], "stats": {"itemEffectiveness": {"value": boost}}
+        }}])).unwrap();
+        let subject = skill(merge(
+            minimal_skill("calming_mind_pill"),
+            json!({
+                "name": "Calming Mind Pill", "item_name": "Calming Mind Pill", "action_kind": "item", "consumes_turn": false,
+                "effects": [{"kind": "createBuff", "stacks": {"value": 4, "isItem": true}, "buff": {
+                    "name": "Calming Mind Pill", "canStack": true, "stats": {"stabilityCostReduction": {"value": 15}},
+                    "effects": [{"kind": "addStack", "stacks": {"value": -1}}]
+                }}]
+            }),
+        ));
+        let next = apply_0717(&state, subject, &base_config()).unwrap();
+        assert_eq!(next.item_effectiveness, base);
+        assert_eq!(
+            next.buffs
+                .iter()
+                .find(|buff| buff.key == "calming_mind_pill")
+                .unwrap()
+                .stacks,
+            stacks
+        );
+    }
+}
+
+#[test]
+fn review_jade_bifang_tracks_nested_bar_progress() {
+    let mut state = base_state();
+    state.completion = 90.0;
+    state.buffs = serde_json::from_value(json!([
+        {"key": "jade", "stacks": 1, "definition": {"name": "Converging Jade Cauldron", "effects": [], "triggeredEffects": [
+            {"trigger": "perfectionGained", "effects": [{"kind": "completion", "amount": {"value": 30, "eqn": "amount / 100"}}]}
+        ]}},
+        {"key": "true_bifang_flame", "stacks": 1, "internal_state": {"blaze": 0}, "definition": {"name": "True Bifang Flame", "effects": [], "triggeredEffects": [
+            {"trigger": "completionGained", "effects": [{"kind": "setState", "key": "blaze", "value": {"value": 1, "eqn": "max(blaze, floor(percentGained))"}}]}
+        ]}}
+    ])).unwrap();
+    let subject = skill(merge(
+        minimal_skill("jade"),
+        json!({"effects": [
+            {"kind": "perfection", "amount": {"value": 10}}, {"kind": "perfection", "amount": {"value": 100}}
+        ]}),
+    ));
+    let next = apply_0717(&state, subject, &base_config()).unwrap();
+    assert_eq!((next.completion, next.perfection), (123.0, 110.0));
+    assert_eq!(
+        next.buffs
+            .iter()
+            .find(|buff| buff.key == "true_bifang_flame")
+            .unwrap()
+            .internal_state
+            .get("blaze"),
+        Some(&24.0)
+    );
+}
+
+fn cycle_config() -> EngineConfig {
+    let mut config = base_config();
+    config.max_qi = 100.0;
+    config.is_sublime_craft = true;
+    config.crafting_type = Some("returningCycle".to_string());
+    config
+}
+
+fn cycle_state(cycle: serde_json::Value) -> EngineState {
+    serde_json::from_value(json!({
+        "qi": 100, "stability": 50, "initial_max_stability": 60,
+        "crit_multiplier": 150,
+        "harmony_data": {"returning_cycle": cycle, "recommended_technique_types": ["fusion"]}
+    }))
+    .unwrap()
+}
+
+fn cycle_skill(cost: f64, kind: &str) -> EngineSkill {
+    skill(merge(
+        minimal_skill("cycle_probe"),
+        json!({"qi_cost": cost, "technique_type": kind}),
+    ))
+}
+
+#[test]
+fn returning_cycle_credits_failed_actions_and_drains_new_charges() {
+    for success in [0.0, 1.0] {
+        let state = cycle_state(json!({"charges": 0, "stored_qi": 0, "charge_size": 10}));
+        let mut subject = cycle_skill(25.0, "refine");
+        subject.success_chance = success;
+        let next = apply_0717(&state, subject, &cycle_config()).unwrap();
+        let cycle = next.harmony_data.returning_cycle.unwrap();
+        assert_eq!(
+            (cycle.charges, cycle.stored_qi, cycle.charge_size),
+            (2.0, 5.0, 10.0)
+        );
+        assert_eq!(cycle.pulse_key, Some(1.0));
+        assert_eq!(cycle.last_outcome.as_deref(), Some("charge"));
+        assert_eq!((next.qi, next.harmony), (69.0, -6.0));
+        assert!(next.harmony_data.recommended_technique_types.is_empty());
+    }
+}
+
+#[test]
+fn returning_cycle_drain_is_not_spending_and_restores_do_not_erase_payment() {
+    let mut state = cycle_state(json!({"charges": 3, "stored_qi": 4, "charge_size": 10}));
+    let next = apply_0717(&state, cycle_skill(0.0, "support"), &cycle_config()).unwrap();
+    assert_eq!((next.qi, next.harmony), (91.0, -9.0));
+    assert_eq!(next.harmony_data.returning_cycle.unwrap().stored_qi, 4.0);
+    state.harmony_data.returning_cycle.as_mut().unwrap().charges = 0.0;
+    state
+        .harmony_data
+        .returning_cycle
+        .as_mut()
+        .unwrap()
+        .stored_qi = 0.0;
+    state.buffs = vec![serde_json::from_value(json!({"key": "watch_spending", "stacks": 1, "definition": {
+        "name": "Watch spending", "effects": [], "triggeredEffects": [{"trigger": "poolSpent", "effects": [{"kind": "completion", "amount": {"value": 1}}]}]
+    }})).unwrap()];
+    let next = apply_0717(&state, cycle_skill(10.0, "refine"), &cycle_config()).unwrap();
+    assert_eq!((next.qi, next.completion), (87.0, 1.0));
+    let mut restore = cycle_skill(25.0, "refine");
+    restore.restores_qi = true;
+    restore.qi_restore = 25.0;
+    let next = apply_0717(&state, restore, &cycle_config()).unwrap();
+    assert_eq!(next.qi, 94.0);
+    assert_eq!(next.harmony_data.returning_cycle.unwrap().stored_qi, 5.0);
+}
+
+#[test]
+fn returning_cycle_drains_before_release_even_on_failure_and_keeps_remainder() {
+    for success in [0.0, 1.0] {
+        let mut state = cycle_state(json!({"charges": 2, "stored_qi": 7, "charge_size": 10}));
+        let mut subject = cycle_skill(15.0, "stabilize");
+        subject.success_chance = success;
+        let next = apply_0717(&state, subject.clone(), &cycle_config()).unwrap();
+        assert_eq!((next.qi, next.harmony), (73.0, 28.0));
+        assert_eq!(
+            next.buffs
+                .iter()
+                .find(|b| b.key == "returned_precision")
+                .unwrap()
+                .stacks,
+            20
+        );
+        let cycle = next.harmony_data.returning_cycle.unwrap();
+        assert_eq!((cycle.charges, cycle.stored_qi), (0.0, 2.0));
+        assert_eq!(cycle.last_outcome.as_deref(), Some("release"));
+        let mut buffs = BuffSet::new(Vec::new());
+        buffs.upsert_from_definition(Some(&returned_precision_definition()), 3.0, None);
+        state.buffs = buffs.into_vec();
+        let next = apply_0717(&state, subject, &cycle_config()).unwrap();
+        assert_eq!(next.buffs[0].stacks, 22);
+    }
+}
+
+#[test]
+fn returning_cycle_precision_helps_only_subsequent_actions_and_ticks_once() {
+    let mut state = cycle_state(json!({"charges": 2, "stored_qi": 0, "charge_size": 10}));
+    let subject = skill(merge(
+        minimal_skill("cycle_crit"),
+        json!({"technique_type": "stabilize", "effects": [
+                {"kind": "completion", "amount": {"value": 100}}
+        ]}),
+    ));
+    let released = apply_0717(&state, subject.clone(), &cycle_config()).unwrap();
+    assert_eq!(released.completion, 100.0);
+    assert_eq!(released.buffs[0].stacks, 10);
+    let next = apply_0717(&released, subject.clone(), &cycle_config()).unwrap();
+    assert_eq!(next.completion - released.completion, 105.0);
+    assert_eq!(next.buffs[0].stacks, 9);
+    let mut buffs = BuffSet::new(Vec::new());
+    buffs.upsert_from_definition(Some(&returned_precision_definition()), 1.0, None);
+    state.buffs = buffs.into_vec();
+    state.harmony_data.returning_cycle.as_mut().unwrap().charges = 0.0;
+    assert!(apply_0717(&state, subject, &cycle_config())
+        .unwrap()
+        .buffs
+        .is_empty());
+}
+
+#[test]
+fn returning_cycle_size_is_fixed_and_uses_runtime_epsilon_and_cleanup() {
+    let state = cycle_state(json!({"charges": 0, "stored_qi": 10.0 - 5e-9, "charge_size": 10}));
+    let next = apply_0717(&state, cycle_skill(0.0, "refine"), &cycle_config()).unwrap();
+    let cycle = next.harmony_data.returning_cycle.unwrap();
+    assert_eq!((cycle.charges, cycle.stored_qi), (1.0, 0.0));
+    let mut config = cycle_config();
+    config.max_qi = 300.0;
+    let next = apply_0717(&state, cycle_skill(25.0, "refine"), &config).unwrap();
+    assert_eq!(next.harmony_data.returning_cycle.unwrap().charge_size, 10.0);
+    let state = cycle_state(json!({"charges": 1000, "stored_qi": 0, "charge_size": 10}));
+    let next = apply_0717(&state, cycle_skill(15.0, "stabilize"), &config).unwrap();
+    assert_eq!((next.qi, next.harmony), (0.0, 100.0));
+    assert_eq!(next.buffs[0].stacks, 5005);
+    let state = cycle_state(json!({"charges": 1, "stored_qi": 0, "charge_size": 3}));
+    assert_eq!(
+        apply_0717(&state, cycle_skill(0.0, "refine"), &config)
+            .unwrap()
+            .qi,
+        99.0
+    );
+}
+
+#[test]
+fn returning_cycle_resets_missing_invalid_and_nonfinite_state_from_raw_maxpool() {
+    for data in [
+        serde_json::Value::Null,
+        json!({}),
+        json!({"charges": 5, "stored_qi": 8, "charge_size": 0}),
+        json!({"charges": null, "stored_qi": 8, "charge_size": 10}),
+        json!({"charges": 5, "stored_qi": null, "charge_size": 10}),
+        json!({"charges": 5, "stored_qi": 8, "charge_size": null}),
+    ] {
+        let state = cycle_state(data);
+        let next = apply_0717(&state, cycle_skill(25.0, "refine"), &cycle_config()).unwrap();
+        let cycle = next.harmony_data.returning_cycle.unwrap();
+        assert_eq!(
+            (cycle.charges, cycle.stored_qi, cycle.charge_size),
+            (2.0, 5.0, 10.0)
+        );
+    }
+    let mut data = HarmonyData::default();
+    let result = process_harmony_effect(
+        &mut data,
+        "returningCycle",
+        "refine",
+        HarmonyProcessContext {
+            starting_max_pool: 5.0,
+            ..HarmonyProcessContext::default()
+        },
+    );
+    assert_eq!(data.returning_cycle.unwrap().charge_size, 1.0);
+    assert_eq!(result.pool_delta, 0.0);
+    let mut state = cycle_state(json!({"charges": 2, "stored_qi": 3, "charge_size": 10}));
+    let result = process_harmony_effect(
+        &mut state.harmony_data,
+        "returningCycle",
+        "stabilize",
+        HarmonyProcessContext::default(),
+    );
+    assert_eq!(
+        (
+            result.pool_delta,
+            result.harmony_delta,
+            result.precision_stacks_added
+        ),
+        (-6.0, 14.0, 10.0)
+    );
+    assert_eq!(state.harmony_data.returning_cycle.unwrap().stored_qi, 3.0);
+}
+
+#[test]
+fn afnm0717_chance_mastery_mixes_current_payment_not_buff_presence() {
+    for (percentage, payment, stacks) in [(0, 20.0, 0), (20, 19.6, 1), (100, 18.0, 5)] {
+        let subject = skill(merge(
+            minimal_skill("fairy_payment"),
+            json!({
+                "qi_cost": 23, "stability_cost": 23,
+                "mastery_entries": [
+                    {"kind": "effect", "effects": [{"kind": "createBuff", "stacks": {"value": 1}, "buff": {
+                        "name": "Energising (10%)", "canStack": true, "effects": [], "stats": {
+                            "qiCostReduction": {"value": 10}, "stabilityCostReduction": {"value": 10}
+                        }
+                    }}]},
+                    {"kind": "effect", "effects": [{"kind": "createBuff", "condition": {"kind": "chance", "percentage": percentage},
+                        "stacks": {"value": 5}, "buff": {"name": "Energising Enhancement", "canStack": true,
+                            "effects": [{"kind": "addStack", "stacks": {"value": -1}}], "stats": {
+                                "qiCostReduction": {"value": 10}, "stabilityCostReduction": {"value": 10}
+                            }
+                        }
+                    }]}
+                ]
+            }),
+        ));
+        let mut state = base_state();
+        state.qi = 39.0;
+        let next = apply_0717(&state, subject, &base_config()).unwrap();
+        assert!((next.qi - (39.0 - payment)).abs() < 1e-10);
+        assert!((next.stability - (50.0 - payment)).abs() < 1e-10);
+        assert_eq!(next.buff_stacks("energising_enhancement"), stacks);
+    }
+}
+
+#[test]
+fn afnm0717_independent_entry_and_effect_payment_chances() {
+    let discount = |name: &str| {
+        json!({"name": name, "canStack": true, "effects": [], "stats": {
+            "qiCostReduction": {"value": 10}, "stabilityCostReduction": {"value": 10}
+        }})
+    };
+    let subject = skill(merge(
+        minimal_skill("independent_payment"),
+        json!({
+            "qi_cost": 23, "stability_cost": 23, "mastery_entries": [
+                {"kind": "effect", "effects": [{"kind": "createBuff", "buff": discount("Base"), "stacks": {"value": 1}}]},
+                {"kind": "effect", "effects": [{"kind": "createBuff", "buff": discount("First"), "stacks": {"value": 5},
+                    "condition": {"kind": "chance", "percentage": 20}}]},
+                {"kind": "effect", "condition": {"kind": "chance", "percentage": 50},
+                    "effects": [{"kind": "createBuff", "buff": discount("Second"), "stacks": {"value": 5}}]}
+            ]
+        }),
+    ));
+    let mut state = base_state();
+    state.qi = 39.0;
+    let next = apply_0717(&state, subject, &base_config()).unwrap();
+    // 40% * 20 + 50% * 18 + 10% * 16 = 18.6 expected payment.
+    assert!((next.qi - 20.4).abs() < 1e-10);
+    assert!((next.stability - 31.4).abs() < 1e-10);
+    assert_eq!(next.buff_stacks("first"), 1);
+    assert_eq!(next.buff_stacks("second"), 2);
+}
+
+#[test]
+fn afnm0717_cost_channels_compose_independently_and_keep_outer_floor() {
+    let mut state = base_state();
+    state.qi_cost_reduction = Some(20.0);
+    state.qi_cost_penalty = Some(25.0);
+    state.stability_cost_reduction = Some(20.0);
+    state.buffs = serde_json::from_value(json!([{
+        "key": "discount", "name": "discount", "stacks": 7,
+        "definition": { "name": "Discount", "canStack": true, "effects": [], "stats": {
+            "qiCostReduction": {"value": 50}, "qiCostPenalty": {"value": 20}
+        }}
+    }]))
+    .unwrap();
+    let config = base_config();
+    let subject = skill(merge(
+        minimal_skill("cost"),
+        json!({"qi_cost": 100, "stability_cost": 3}),
+    ));
+    let skills = vec![subject.clone()];
+    let env = ActionEnv {
+        config: &config,
+        skills: &skills,
+    };
+    let costs = calculate_effective_action_costs(
+        &env,
+        &state,
+        &subject,
+        ConditionEffectSummary::default(),
+        &state.buffs,
+    );
+    assert_eq!(costs.qi_cost, 60.0);
+    assert_eq!(costs.stability_cost, 2.0);
+    let mut echo = config;
+    echo.crafting_type = Some("enhancingEcho".into());
+    state.harmony_data.enhancing_echo = Some(EnhancingEchoData {
+        attuned_type: Some("refine".into()),
+        ..Default::default()
+    });
+    let env = ActionEnv {
+        config: &echo,
+        skills: &skills,
+    };
+    assert_eq!(
+        calculate_effective_action_costs(
+            &env,
+            &state,
+            &subject,
+            ConditionEffectSummary::default(),
+            &state.buffs
+        )
+        .stability_cost,
+        1.0
+    );
+    let mut free = subject;
+    free.no_qi_cost = true;
+    state.pool_cost_flat = 100.0;
+    assert_eq!(
+        calculate_effective_action_costs(
+            &env,
+            &state,
+            &free,
+            ConditionEffectSummary::default(),
+            &state.buffs
+        )
+        .qi_cost,
+        0.0
+    );
+}
+
+#[test]
+fn afnm0717_mastery_precedes_payment_and_does_not_tick_on_failure() {
+    let mut state = base_state();
+    state.qi_droplets = 3.0;
+    let subject = skill(merge(
+        minimal_skill("failed"),
+        json!({
+            "qi_cost": 10, "stability_cost": 3, "success_chance": 0, "toxicity_cost": 5, "droplet_cost": 3,
+            "mastery_entries": [{"kind": "effect", "effects": [{"kind": "createBuff", "stacks": {"value": 2}, "buff": {
+                "name": "Surcharge", "canStack": true, "stats": {"qiCostPenalty": {"value": 100, "eqn": "toxicity / 5 + 3 - qiDroplets"}},
+                "effects": [{"kind": "addStack", "stacks": {"value": -1}}]
+            }}]}],
+            "effects": [{"kind": "completion", "amount": {"value": 100}}]
+        }),
+    ));
+    let next = apply_0717(&state, subject, &base_config()).unwrap();
+    assert_eq!(next.qi, 50.0);
+    assert_eq!(next.stability, 47.0);
+    assert_eq!(next.toxicity, 5.0);
+    assert_eq!(next.qi_droplets, 0.0);
+    assert_eq!(next.completion, 0.0);
+    assert_eq!(next.buff_stacks("surcharge"), 2);
+}
+
+#[test]
+fn afnm0717_chance_mastery_preserves_the_captured_probability() {
+    let subject = skill(merge(
+        minimal_skill("chance"),
+        json!({"success_chance": 0,
+            "mastery_entries": [{"kind": "effect", "condition": {"kind": "chance", "percentage": 10},
+                "effects": [{"kind": "completion", "amount": {"value": 300}}]}]
+        }),
+    ));
+    assert_eq!(
+        apply_0717(&base_state(), subject, &base_config())
+            .unwrap()
+            .completion,
+        30.0
+    );
+}
+
+#[test]
+fn afnm0717_jade_applies_boost_and_guards_recursive_trigger_pairs() {
+    let mut state = base_state();
+    state.buffs = serde_json::from_value(json!([{
+        "key": "jade", "name": "jade", "stacks": 1,
+        "definition": {"name": "Jade", "canStack": false, "effects": [],
+            "stats": {"completionBoost": {"value": 100}},
+            "triggeredEffects": [
+                {"trigger": "perfectionGained", "effects": [{"kind": "completion", "amount": {"value": 30, "eqn": "amount / 100"}}]},
+                {"trigger": "completionGained", "effects": [{"kind": "perfection", "amount": {"value": 1}}]}
+            ]}
+    }])).unwrap();
+    let subject = skill(merge(
+        minimal_skill("jade"),
+        json!({"effects": [{"kind": "perfection", "amount": {"value": 100}}]}),
+    ));
+    let next = apply_0717(&state, subject, &base_config()).unwrap();
+    assert_eq!(next.completion, 60.0);
+    assert_eq!(next.perfection, 101.0);
+}
+
+#[test]
+fn afnm0717_invasion_stacks_extend_duration_not_stat_penalties() {
+    for name in ["Fusion Invasion", "Refinement Invasion"] {
+        let definition = json!({"name": name, "canStack": true, "stats": {"intensity": {"value": -2}},
+            "effects": [{"kind": "addStack", "stacks": {"value": -1}}]});
+        let key = normalize_identifier(name);
+        let mut state = base_state();
+        state.buffs = serde_json::from_value(
+            json!([{"key": key, "name": name, "stacks": 2, "definition": definition}]),
+        )
+        .unwrap();
+        let subject = skill(merge(
+            minimal_skill("invasion"),
+            json!({"effects": [
+                {"kind": "completion", "amount": {"value": 1, "stat": "intensity"}},
+                {"kind": "createBuff", "buff": definition, "stacks": {"value": 2}}
+            ]}),
+        ));
+        let next = apply_0717(&state, subject, &base_config()).unwrap();
+        assert_eq!(next.completion, 8.0);
+        assert_eq!(next.buff_stacks(&key), 3);
+    }
+}
+
+#[test]
+fn afnm0717_droplets_gate_and_pay_even_on_failure() {
+    let mut state = base_state();
+    let subject = skill(merge(
+        minimal_skill("Stablizing Circuit"),
+        json!({"droplet_cost": 3, "success_chance": 0, "cooldown": 9999999}),
+    ));
+    state.qi_droplets = 2.0;
+    assert!(apply_0717(&state, subject.clone(), &base_config()).is_none());
+    state.qi_droplets = 3.0;
+    state.max_qi_droplets = 6.0;
+    let next = apply_0717(&state, subject, &base_config()).unwrap();
+    assert_eq!(state.qi_droplets, 3.0);
+    assert_eq!(next.qi_droplets, 0.0);
+    assert_eq!(next.max_qi_droplets, 6.0);
+    assert_eq!(next.cooldowns, vec![9999999]);
+}
+
+#[test]
+fn afnm0717_multikey_state_refreshes_scope_and_type_hooks_run_first() {
+    let mut state = base_state();
+    state.buffs = serde_json::from_value(json!([{"key": "scope", "name": "scope", "stacks": 2,
+        "internal_state": {"primary": 1, "extra": 4}, "definition": {
+            "name": "Scope", "canStack": true, "additionalVariables": {"value": 3, "roomEffectiveness": 50},
+            "onRefine": [{"kind": "setState", "key": "primary", "keys": ["extra"], "mode": "add", "value": {"value": 2}}],
+            "effects": [{"kind": "completion", "amount": {"value": 1, "eqn": "primary + extra + value + stacks", "scalesWithRoomEffectiveness": true}}]
+        }}])).unwrap();
+    let next = apply_0717(&state, skill(minimal_skill("scope")), &base_config()).unwrap();
+    assert_eq!(next.completion, 19.0);
+    assert_eq!(next.buffs[0].internal_state.get("primary"), Some(&3.0));
+    assert_eq!(next.buffs[0].internal_state.get("extra"), Some(&5.0));
+}
+
+#[test]
+fn afnm0717_nested_stepped_multipliers_and_final_rounding() {
+    let variables = vars(&[("counter", 9.0), ("roomEffectiveness", 50.0)]);
+    assert_eq!(
+        evaluate_scaling(
+            Some(&scaling(
+                json!({"value": 2.4, "multiplier": {"value": 0.5, "scaling": "counter", "increment": 1}})
+            )),
+            &variables,
+            0.0
+        ),
+        2.4 * 3.0
+    );
+    assert_eq!(
+        evaluate_scaling(
+            Some(&scaling(
+                json!({"value": 2.4, "multiplier": {"value": 1.1, "multiplier": {"value": 0.5, "scaling": "counter"}}, "roundToInteger": true})
+            )),
+            &variables,
+            0.0
+        ),
+        19.0
+    );
+    assert_eq!(
+        evaluate_scaling(
+            Some(&scaling(
+                json!({"value": 2.5, "scalesWithRoomEffectiveness": true, "roundToInteger": true})
+            )),
+            &variables,
+            0.0
+        ),
+        4.0
+    );
+}
+
 fn merge(base: serde_json::Value, extra: serde_json::Value) -> serde_json::Value {
     let mut merged = base;
     let (Some(target), Some(source)) = (merged.as_object_mut(), extra.as_object()) else {

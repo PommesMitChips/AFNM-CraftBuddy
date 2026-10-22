@@ -59,7 +59,14 @@ interface NativeMctsInput {
 }
 
 interface NativeMctsState {
+  item_effectiveness: number;
   qi: number;
+  qi_droplets: number;
+  max_qi_droplets: number;
+  qi_cost_reduction: number;
+  qi_cost_penalty: number;
+  stability_cost_reduction: number;
+  stability_cost_penalty: number;
   stability: number;
   initial_max_stability: number;
   stability_penalty: number;
@@ -155,6 +162,8 @@ interface NativeMctsConfig {
 }
 
 interface NativeMctsSkill {
+  droplet_cost: number;
+  no_qi_cost: boolean;
   name: string;
   key: string;
   technique_type: string;
@@ -210,6 +219,13 @@ interface NativeHarmonyData {
   enhancing_echo?: NativeEnhancingEchoData;
   eccentric_decree?: NativeEccentricDecreeData;
   captivating_cadence?: NativeCaptivatingCadenceData;
+  returning_cycle?: {
+    charges: number;
+    stored_qi: number;
+    charge_size: number;
+    pulse_key?: number;
+    last_outcome?: string;
+  };
   recommended_technique_types: string[];
   alchemical_reaction_modifiers?: NativeHarmonyStatModifiers;
 }
@@ -500,6 +516,15 @@ function convertHarmonyData(
           last_outcome: harmonyData.captivatingCadence.lastOutcome,
         }
       : undefined,
+    returning_cycle: harmonyData?.returningCycle
+      ? {
+          charges: harmonyData.returningCycle.charges,
+          stored_qi: harmonyData.returningCycle.storedQi,
+          charge_size: harmonyData.returningCycle.chargeSize,
+          pulse_key: harmonyData.returningCycle.pulseKey,
+          last_outcome: harmonyData.returningCycle.lastOutcome,
+        }
+      : undefined,
     recommended_technique_types: [
       ...(harmonyData?.recommendedTechniqueTypes || []),
     ],
@@ -585,6 +610,8 @@ function buildNativeSkill(skill: SkillDefinition): NativeMctsSkill {
     technique_type: skill.type || 'support',
     action_kind: skill.actionKind || 'skill',
     qi_cost: finiteNumber(skill.qiCost),
+    droplet_cost: finiteNumber(skill.dropletCost),
+    no_qi_cost: skill.noQiCost === true,
     stability_cost: finiteNumber(skill.stabilityCost),
     success_chance: finiteNumber(skill.successChance, 1),
     base_completion_gain: finiteNumber(skill.baseCompletionGain),
@@ -666,6 +693,13 @@ export function buildNativeMctsInput(params: {
   return {
     state: {
       qi: finiteNumber(state.qi),
+      qi_droplets: finiteNumber(state.qiDroplets),
+      item_effectiveness: finiteNumber(state.itemEffectiveness),
+      max_qi_droplets: finiteNumber(state.maxQiDroplets),
+      qi_cost_reduction: finiteNumber(state.qiCostReduction),
+      qi_cost_penalty: finiteNumber(state.qiCostPenalty),
+      stability_cost_reduction: finiteNumber(state.stabilityCostReduction),
+      stability_cost_penalty: finiteNumber(state.stabilityCostPenalty),
       stability: finiteNumber(state.stability),
       initial_max_stability: finiteNumber(state.initialMaxStability, 60),
       stability_penalty: finiteNumber(state.stabilityPenalty),

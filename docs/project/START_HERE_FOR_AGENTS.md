@@ -3,8 +3,8 @@ title: Start Here For Agents
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.10-9bf9078
-last_verified: 2026-09-01
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
 source_of_truth: src/modContent/index.ts, src/optimizer/*, src/__tests__/*
 review_cycle_days: 30
 related_files:
@@ -18,9 +18,11 @@ related_files:
 
 # Start Here For Agents
 
-CraftBuddy targets AFNM **0.7.10** (build `0.7.10-9bf9078`). If you read a claim about four harmony types, item-kind harmony inference, a manual `Finish Craft` action, a Completion Bonus buff that grants control, or a Rust engine that cannot see item actions, it predates the current target and is wrong.
+CraftBuddy **6.8.0** targets AFNM **0.7.17** (build `0.7.17-d8ae6ce`, `afnm-types@0.7.17`). There are nine player-selected harmonies. Claims about item-kind harmony inference, a manual `Finish Craft`, Completion Bonus granting control, or Rust not seeing items are obsolete.
 
 Recent patches, in one line each: 0.7.6 moved Eccentric Decree to **per bar application** scoring (anything saying it awards harmony once at end of turn predates 0.7.6); 0.7.7/0.7.8 introduced stateful buffs, the Illume Crucible seal and discordant conditions; 0.7.9 reworked Purifying Flame into a `bonusMaximumQuality` cap boost and overhauled the Insight package; 0.7.10 replaced the Completion Bonus buff's per-stack control with `+10 perfectionBoost` per stack.
+
+The 0.7.17 retarget adds Returning Cycle, independent reduction/penalty cost channels, droplets, mastery-before-payment phases and pre-action-name buff ticking. General triggered effects and scaling additions are mirrored in TS/Rust. See `MECHANICS_PARITY.md` for the implementation and `RUNTIME_EVIDENCE.md` §17 for the runtime audit; do not redesign search branching or future probabilistic buffs as part of this retarget.
 
 ## Critical first read
 
@@ -60,11 +62,11 @@ Recent patches, in one line each: 0.7.6 moved Eccentric Decree to **per bar appl
 
 These filenames are intentionally version-free: each carries its targeted build in a `game_version` frontmatter field, so a game patch is a content edit rather than a rename.
 
-- `docs/project/RUNTIME_EVIDENCE.md` — extracted runtime source for every patching change from 0.7.5 through 0.7.10 (Eccentric Decree hook, stateful buffs, cap boosts, the Perfection Boost rework), the auto-use hook, the absence of a manual finish, and the resonance formulas. Authoritative; do not re-derive these from tooltips.
+- `docs/project/RUNTIME_EVIDENCE.md` — extracted runtime source through 0.7.17, including execution phases, cost channels, droplets, Returning Cycle and named buff changes. Authoritative; do not re-derive these from tooltips.
 - `docs/project/ENGINE_PERFORMANCE.md` — engine measurements, the profiling harness, and the optimizations rejected with data.
 - `docs/project/OPTIMIZER_ENGINE_FINDINGS.md` — engine decision record.
 - `docs/project/OPTIMIZER_NEXT_STEPS_HANDOFF.md` — what is settled vs open.
-- `docs/project/RELEASE_NOTES_6.7.0.md` — the current 0.7.12 retarget; earlier notes (`6.6.0` → 0.7.10, `6.5.0` → 0.7.9, `6.1.0` → 0.7.6, `6.0.0` → 0.7.5) are historical.
+- `docs/project/RELEASE_NOTES_6.8.0.md` — the current 0.7.17 retarget; `CHANGELOG.md` links release history. Earlier notes (including `6.7.0` → 0.7.12) are historical.
 
 ## Context rules
 

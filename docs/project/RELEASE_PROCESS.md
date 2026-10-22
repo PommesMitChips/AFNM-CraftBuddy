@@ -3,11 +3,12 @@ title: Release Process
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.10-9bf9078
-last_verified: 2026-08-23
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
 source_of_truth: package.json, scripts/workshop-upload.ts, scripts/installed-game-runtime.js, .github/workflows/release.yml, ../ModUploader-AFNM/package.json, ../ModUploader-AFNM/electron/main/cli.ts
 review_cycle_days: 30
 related_files:
+  - docs/project/RELEASE_NOTES_6.8.0.md
   - AGENTS.md
   - docs/project/TESTING.md
   - scripts/workshop-upload.ts
@@ -38,6 +39,8 @@ Bump the **minor** version for a game-version retarget that keeps the scoring ar
 
 A major or feature release gets `docs/project/RELEASE_NOTES_<version>.md` covering what changed, what was measured and rejected, and the limitations that genuinely remain. Follow the structure of the newest existing notes: frontmatter, a short framing intro, `## Changed` with `###` subsections, `## Known limitations`, `## Upgrading`.
 
+Add the concise release summary and notes link to `CHANGELOG.md`; current release: **6.8.0 / AFNM 0.7.17-d8ae6ce**. Historical notes keep their original versions and measurements.
+
 Mirror the player-facing subset into [`WORKSHOP_DESCRIPTION.md`](./WORKSHOP_DESCRIPTION.md)'s single rolling `[h1]What's New in vN[/h1]` section. Update that section in place for minor and patch releases instead of adding a separate block for every version; for the current major series, use `[h1]What's New in v6[/h1]`. Keep the full per-release history in `RELEASE_NOTES_<version>.md`. Also refresh the "Updated for game version" line near the top when the release retargets the game.
 
 When a release retargets the game version, `docs/project/RUNTIME_EVIDENCE.md` and `docs/project/ENGINE_PERFORMANCE.md` are updated **in place** — their filenames deliberately carry no version, so a new game build is a content edit rather than a rename.
@@ -65,6 +68,8 @@ bun run optimizer:bench
 ```
 
 `release:validate` does not cover the Rust crate or the benchmark contracts.
+
+Regenerate the differential corpus after mechanics changes, inspect its structural diff, and run the recorded Rust corpus without `CRAFTBUDDY_DIFFERENTIAL_INPUT`. Run wall-clock benchmark presets separately from CPU-heavy Jest/Cargo checks; fixture-specific node overrides are documented in `ENGINE_PERFORMANCE.md`.
 
 If the task changed behavior or workflow but the docs did not need edits after review, explicitly confirm that no authoritative docs became stale before continuing.
 

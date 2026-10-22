@@ -3,7 +3,7 @@ title: Documentation Inventory
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-last_verified: 2026-09-13
+last_verified: 2026-10-22
 source_of_truth: repository markdown file inventory
 review_cycle_days: 30
 related_files:
@@ -12,19 +12,19 @@ related_files:
 
 # Documentation Inventory
 
-Generated on: 2026-09-13
+Generated on: 2026-10-22
 
 ## Summary
 
 | Category | Count |
 |---|---|
-| project | 24 |
+| project | 25 |
 | dev-request | 2 |
 | project-meta | 1 |
 | history | 0 |
 | reference | 20 |
-| root-or-other | 14 |
-| total | 61 |
+| root-or-other | 15 |
+| total | 63 |
 
 ## Authoritative Docs
 
@@ -50,6 +50,7 @@ Generated on: 2026-09-13
 | `docs/project/RELEASE_NOTES_6.5.0.md` | project | active | true | craftbuddy-maintainers | keep-authoritative |
 | `docs/project/RELEASE_NOTES_6.6.0.md` | project | active | true | craftbuddy-maintainers | keep-authoritative |
 | `docs/project/RELEASE_NOTES_6.7.0.md` | project | active | true | craftbuddy-maintainers | keep-authoritative |
+| `docs/project/RELEASE_NOTES_6.8.0.md` | project | active | true | craftbuddy-maintainers | keep-authoritative |
 | `docs/project/RELEASE_PROCESS.md` | project | active | true | craftbuddy-maintainers | keep-authoritative |
 | `docs/project/ROADMAP.md` | project | active | true | craftbuddy-maintainers | keep-authoritative |
 | `docs/project/RUNTIME_EVIDENCE.md` | project | active | true | craftbuddy-maintainers | keep-authoritative |
@@ -69,6 +70,7 @@ Generated on: 2026-09-13
 |---|---|---|---|---|
 | `.github/copilot-instructions.md` | - | - | - | review |
 | `AGENTS.md` | - | - | - | keep-authoritative-root |
+| `CHANGELOG.md` | - | - | - | review |
 | `CLAUDE.md` | - | - | - | review |
 | `docs/plans/mcts-wasm/00-PLAN.md` | - | - | - | review |
 | `docs/plans/mcts-wasm/01-WASM-FEASIBILITY.md` | - | - | - | review |

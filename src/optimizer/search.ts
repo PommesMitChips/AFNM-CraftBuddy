@@ -3136,7 +3136,7 @@ function buildGoalUnlockScalingVariables(
     toxicity: state.toxicity,
     maxtoxicity: state.maxToxicity,
     resistance: 0,
-    itemEffectiveness: 100,
+    itemEffectiveness: state.itemEffectiveness,
     pillsPerRound: config.pillsPerRound || 1,
     poolCostFlat: 0,
     poolCostPercentage: 0,

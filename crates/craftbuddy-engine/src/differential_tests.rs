@@ -39,6 +39,12 @@ struct Case {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Expectation {
+    #[serde(default)]
+    item_effectiveness: Option<f64>,
+    #[serde(default)]
+    qi_droplets: Option<f64>,
+    #[serde(default)]
+    max_qi_droplets: Option<f64>,
     qi: f64,
     stability: f64,
     stability_penalty: f64,
@@ -96,9 +102,18 @@ struct HarmonyDigest {
     cadence_last_action: Option<String>,
     cadence_chain: Option<i32>,
     cadence_last_outcome: Option<String>,
+    cycle_charges: Option<f64>,
+    cycle_stored_qi: Option<f64>,
+    cycle_charge_size: Option<f64>,
+    cycle_pulse_key: Option<f64>,
+    cycle_last_outcome: Option<String>,
 }
 
 fn parse_corpus() -> Corpus {
+    if let Ok(path) = std::env::var("CRAFTBUDDY_DIFFERENTIAL_INPUT") {
+        let input = std::fs::read_to_string(path).expect("fresh differential input is readable");
+        return serde_json::from_str(&input).expect("fresh differential input matches the schema");
+    }
     serde_json::from_str(CORPUS).expect("differential corpus matches the schema")
 }
 
@@ -305,6 +320,39 @@ fn diff_harmony(
     );
 
     let cadence = actual.captivating_cadence.as_ref();
+    let cycle = actual.returning_cycle.as_ref();
+    for (name, actual, expected) in [
+        (
+            "cycleCharges",
+            cycle.map(|c| c.charges),
+            expected.cycle_charges,
+        ),
+        (
+            "cycleStoredQi",
+            cycle.map(|c| c.stored_qi),
+            expected.cycle_stored_qi,
+        ),
+        (
+            "cycleChargeSize",
+            cycle.map(|c| c.charge_size),
+            expected.cycle_charge_size,
+        ),
+        (
+            "cyclePulseKey",
+            cycle.and_then(|c| c.pulse_key),
+            expected.cycle_pulse_key,
+        ),
+    ] {
+        diff_opt_number(failures, scenario, skill_key, name, actual, expected);
+    }
+    diff_debug(
+        failures,
+        scenario,
+        skill_key,
+        "cycleLastOutcome",
+        cycle.and_then(|c| c.last_outcome.clone()),
+        expected.cycle_last_outcome.clone(),
+    );
     diff_debug(
         failures,
         scenario,
@@ -384,6 +432,36 @@ fn matches_the_typescript_simulator() {
                 (Some((next, _, _)), Some(expected)) => {
                     compared += 1;
                     let key = case.skill_key.as_str();
+                    if let Some(value) = expected.qi_droplets {
+                        diff_field(
+                            &mut failures,
+                            &name,
+                            key,
+                            "qi_droplets",
+                            next.qi_droplets,
+                            value,
+                        );
+                    }
+                    if let Some(value) = expected.max_qi_droplets {
+                        diff_field(
+                            &mut failures,
+                            &name,
+                            key,
+                            "max_qi_droplets",
+                            next.max_qi_droplets,
+                            value,
+                        );
+                    }
+                    if let Some(value) = expected.item_effectiveness {
+                        diff_field(
+                            &mut failures,
+                            &name,
+                            key,
+                            "item_effectiveness",
+                            next.item_effectiveness,
+                            value,
+                        );
+                    }
                     diff_field(&mut failures, &name, key, "qi", next.qi, expected.qi);
                     diff_field(
                         &mut failures,
@@ -504,30 +582,23 @@ fn matches_the_typescript_simulator() {
                     // Trigger-written internal state (0.7.7+): compared per
                     // buff and key with the scalar tolerance so a setState
                     // divergence fails here instead of drifting silently.
-                    for (actual_buff, expected_buff) in
-                        next.buffs.iter().zip(expected.buffs.iter())
+                    for (actual_buff, expected_buff) in next.buffs.iter().zip(expected.buffs.iter())
                     {
                         if actual_buff.key != expected_buff.key {
                             break;
                         }
-                        let actual_state: std::collections::BTreeMap<&String, f64> =
-                            actual_buff
-                                .internal_state
-                                .iter()
-                                .map(|(state_key, value)| (state_key, *value))
-                                .collect();
-                        for (state_key, expected_value) in &expected_buff.internal_state
-                        {
-                            let actual_value =
-                                actual_state.get(state_key).copied().unwrap_or(0.0);
+                        let actual_state: std::collections::BTreeMap<&String, f64> = actual_buff
+                            .internal_state
+                            .iter()
+                            .map(|(state_key, value)| (state_key, *value))
+                            .collect();
+                        for (state_key, expected_value) in &expected_buff.internal_state {
+                            let actual_value = actual_state.get(state_key).copied().unwrap_or(0.0);
                             diff_field(
                                 &mut failures,
                                 &name,
                                 key,
-                                &format!(
-                                    "buffs.{}.internalState.{}",
-                                    actual_buff.key, state_key
-                                ),
+                                &format!("buffs.{}.internalState.{}", actual_buff.key, state_key),
                                 actual_value,
                                 *expected_value,
                             );

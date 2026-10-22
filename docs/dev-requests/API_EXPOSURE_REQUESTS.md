@@ -3,7 +3,8 @@ title: API Exposure Requests
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-last_verified: 2026-09-13
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
 source_of_truth: src/modContent/index.ts, src/optimizer/*
 review_cycle_days: 30
 related_files:
@@ -13,6 +14,8 @@ related_files:
 # API/Data Exposure Requests for Game Developer
 
 This list contains the smallest set of exposures that materially improve optimizer parity and maintainability.
+
+Reviewed against the 6.8.0 integration and 0.7.17 runtime audit (`RUNTIME_EVIDENCE.md` §17). `getActionCost` previews individual scaling costs; it is not a finalized execution-payment oracle after mastery effects. Independent cost channels, droplets and current-action payment therefore remain modelled locally in both engines. No new API cutover is part of this retarget.
 
 ## Priority list
 

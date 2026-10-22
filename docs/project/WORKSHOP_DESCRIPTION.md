@@ -3,11 +3,12 @@ title: Workshop Description
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.12-ad43f78
-last_verified: 2026-09-13
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
 source_of_truth: Steam Workshop item 3661729323, package.json, src/settings/index.ts, src/optimizer/search.ts, src/optimizer/outcome.ts, crates/craftbuddy-engine/*
 review_cycle_days: 30
 related_files:
+  - docs/project/RELEASE_NOTES_6.8.0.md
   - docs/project/RELEASE_PROCESS.md
   - docs/project/RELEASE_NOTES_6.7.0.md
   - docs/project/RELEASE_NOTES_6.6.0.md
@@ -20,23 +21,24 @@ related_files:
 [h1]CraftBuddy[/h1]
 [b]A crafting optimizer for Ascend From Nine Mountains.[/b]
 
-CraftBuddy reads your live craft, simulates thousands of possible continuations, and tells you the best next action — and [i]why[/i]. No spreadsheets, no memorised rotations, no wasted materials.
+CraftBuddy reads your live craft, simulates possible continuations, and recommends the next action — and [i]why[/i].
 
-[b]Updated for game version 0.7.12.[/b]
+[b]CraftBuddy 6.8.0 — updated for game version 0.7.17.[/b]
 
 [hr][/hr]
 
 [h1]What's New in v6[/h1]
-The v6 releases rebuilt CraftBuddy around one principle: play the craft the way the game actually scores it. Key highlights, all verified against the live game:
+The v6 releases model how the game scores your craft:
 
 [list]
-[*] [b]0.7.12 ready[/b] — Full simulation of all eight harmonies including the new Captivating Cadence harmony (chain building, stat boosts, repeat penalties).
+[*] [b]0.7.17 ready[/b] — all nine harmonies, including Returning Cycle: spending Qi builds charges, charges drain Qi and harmony, and Stabilize releases them for harmony and Returned Precision. Captivating Cadence chains remain supported.
+[*] [b]Updated payment and buff timing[/b] — independent cost reduction/penalty stats, Qi droplets, mastery effects before payment, and new buffs surviving their creation turn are modelled in both engines.
 [*] [b]Ambition targets[/b] — optional Perfection Band Goal and Completion Band Ceiling settings let you aim for more stars while keeping completion at the band you want.
 [*] [b]Auto-mode reliability[/b] — auto mode now recovers and retries when the game quietly ignores an action, and coexists cleanly with your auto-use loadout.
-[*] [b]Accurate game mechanics[/b] — full simulation of all eight harmonies, Perfection Boost stats, Purifying Flame quality caps, Illume Crucible, discordant flames, Eccentric Decree, and conjunctive outcome tier gates with auto-finish timing.
+[*] [b]Game-aware simulation[/b] — Perfection Boost stats, Purifying Flame quality caps, Illume Crucible, discordant flames, Eccentric Decree, and conjunctive outcome gates with auto-finish timing.
 [*] [b]Overcraft scoring[/b] — extra bands past the target tier are scored per bar the way the game rewards them (stacks, quality, material refunds).
-[*] [b]High-performance search[/b] — multi-threaded background workers (up to ~4x explored lines) and instant return on stable crafts keep recommendations snappy without freezing the UI.
-[*] [b]Dual engines[/b] — optional Rust/WASM engine runs 1.90x faster with verified transition-for-transition mechanics parity.
+[*] [b]Background search[/b] — workers and early return on stable crafts keep the UI responsive.
+[*] [b]Dual engines[/b] — optional Rust/WASM assistance, with transition-for-transition mechanics checked against the TypeScript simulator.
 [/list]
 
 [hr][/hr]
@@ -50,7 +52,7 @@ The v6 releases rebuilt CraftBuddy around one principle: play the craft the way 
 [*] Lookahead search with presets and manual performance controls
 [*] Condition forecast awareness, plus probabilistic branching beyond the forecast queue
 [*] Projected outcome tier, per-bar band progress, and the bar blocking your next tier
-[*] Harmony-aware simulation for all eight harmonies
+[*] Harmony-aware simulation for all nine harmonies
 [*] Buff, mastery, Soulflame and toxicity-aware simulation
 [*] Coexists with the game's crafting auto-use loadout
 [*] Large-number-safe parsing and formatting for late-game values
@@ -83,7 +85,7 @@ Crafts finish on their own once both bars are far enough along, so CraftBuddy te
 Settings live behind the gear icon inside the CraftBuddy panel and open as a slide-over.
 
 [h2]Search Presets[/h2]
-Not sure what to change? Just pick a preset — each one adjusts all four search parameters together in tested ratios.
+Pick a preset to adjust all four search parameters together.
 [list]
 [*] [b]Instant[/b] — near-zero latency, minimal lookahead
 [*] [b]Fast[/b] — quick results, good for simple crafts
@@ -103,10 +105,10 @@ For advanced users. These four sliders are coupled — pushing one far above the
 Search stops as soon as either the time budget or the node budget is reached. Results vary with craft complexity and machine speed, since the time budget is wall-clock based.
 
 [h2]Ambition Targets[/h2]
-Both are set in bands ("stars"), and both are [b]Auto[/b] by default — Auto is exactly the previous behaviour, where the outcome tier you are aiming at decides everything.
+Both use bands ("stars") and default to [b]Auto[/b], following your target outcome tier.
 [list]
-[*] [b]Perfection Band Goal[/b] — ask for more perfection bands than your target tier actually requires. Only ever raises the goal; the game's own tier requirements and the recipe's cap still apply, so this cannot cost you the tier.
-[*] [b]Completion Band Ceiling[/b] — stop rewarding completion past the band you pick, so leftover effort goes into perfection instead. The target tier always stays reachable: the ceiling can never drop below what the tier needs.
+[*] [b]Perfection Band Goal[/b] — aim for extra perfection bands, bounded by the recipe cap, without lowering the tier requirement.
+[*] [b]Completion Band Ceiling[/b] — stop rewarding completion past your chosen band, never below what the target tier needs.
 [/list]
 [b]Why bars "stop" around 200%:[/b] band widths grow by 1.3x each, so the bands land at roughly 100% / 230% / 399% / 619% / 904% of the recipe target. Sublime needs two bands on both bars — about 230% — and once that is banked the craft has met its gate. If you want to push further, that is what these two targets are for.
 
@@ -116,7 +118,7 @@ Toggle predicted rotation, final state estimates, upcoming conditions and altern
 [h2]Engine Selector[/h2]
 [list]
 [*] [b]Legacy engine[/b] — the established lookahead optimizer. Reliable and thoroughly tested for all crafting.
-[*] [b]Experimental engine[/b] — opt-in Rust/WASM assistance for difficult late-game, sublime and harmony-heavy crafts. As of v6 it models the same mechanics as the main engine and runs 1.90x faster than before.
+[*] [b]Experimental engine[/b] — opt-in Rust/WASM assistance for difficult late-game, sublime and harmony-heavy crafts, modelling the same mechanics as the main engine.
 [/list]
 [b]Recommendation:[/b] keep Legacy for everyday crafting and try Experimental on tough late-game or sublime crafts. If Experimental ever gives a suspicious recommendation, switch back to Legacy in CraftBuddy settings.
 
@@ -153,3 +155,6 @@ If you would rather not use the Workshop:
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3694065051]Lucky All Around[/url] — configurable pity-event luck weighting for Explore events
 [/list]
 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3704747572]View all my mods[/url]
+
+[h1]Make Your Own Mod[/h1]
+[url=https://github.com/lemon07r/AfnmAgentModTemplate]AFNM Agent Mod Template[/url] — a ready-to-go scaffold with ModAPI references, runtime checks, Workshop packaging and coding-agent workflows.

@@ -5,7 +5,7 @@ description: CraftBuddy optimizer/search/MCTS workflow. Activate for changes to 
 
 # CraftBuddy Optimizer
 
-Use this before touching recommendation behavior. `docs/project/OPTIMIZER_DESIGN.md` remains the detailed source of truth; this skill is the action checklist. Modelled game version: AFNM **0.7.10**.
+Use this before touching recommendation behavior. `docs/project/OPTIMIZER_DESIGN.md` remains the detailed source of truth; this skill is the action checklist. Modelled game version: AFNM **0.7.17-d8ae6ce**.
 
 ## Activate When
 
@@ -84,6 +84,9 @@ Use this before touching recommendation behavior. `docs/project/OPTIMIZER_DESIGN
 10. **`needsBarContributions()` is a live gate, not dead code**: bar-change events are collected only when the craft's harmony is `eccentricDecree`. Leave the gate in `src/optimizer/skills.ts` and `needs_bar_contributions()` in `crates/craftbuddy-engine/src/effects.rs` alone; it keeps every other harmony allocation-free.
 11. **Internal names and display names differ**: key `false_fusion` / internal `name` `False Fusion` displays as "Strive for Completion". Search, caches, tests and fixtures key on `name`; only user-facing strings go through `techniqueDisplayName()` (exported from `src/optimizer/index.ts`).
 12. **Band targets are user-settable since 6.4.0**: `perfectionBandGoal` and `completionBandCeiling` (`0` = auto, clamped to 8) enter only through `buildOutcomeBands`, `deriveBandGoals` (raises the perfection goal, never lowers it) and `computeOvercraftExtras` (bounds completion extras, never below the tier requirement). They move the goal the search works toward, not the outcome model: `TIER_REQUIREMENTS`, band thresholds, tier classification and `willAutoFinish` stay untouched, and both fields must stay mirrored in the Rust `EngineConfig` as snake_case.
+
+13. **Preserve 0.7.17 phases**: pay toxicity/droplets/buff costs, capture success chance, apply effect masteries, recompute/pay Qi and stability, then success effects. Tick only pre-action buff names, then resolve harmony. Chance-conditioned payment buffs are folded as transient payment branches, not persistent search branches; no probability-aware future-buff redesign is part of this retarget.
+14. **Returning Cycle is a transition, not a scoring heuristic**: fixed starting charge size, accrual from reported payment even on failure, drain before stabilize release, ordinary Returned Precision stacks ticking on later actions. Mirror TS/Rust and preserve the payload through replay/bridge. `runtime0717.test.ts` and `returningCycle.test.ts` cover the edge cases.
 
 ## References
 

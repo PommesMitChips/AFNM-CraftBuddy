@@ -3,8 +3,8 @@ title: Mod API Integration
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.10-9bf9078
-last_verified: 2026-09-01
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
 source_of_truth: src/modContent/index.ts, src/modContent/craftingStoreState.ts, src/modContent/craftingContext.ts, src/modContent/harmonyState.ts, src/modContent/nativeAutoUse.ts, src/modContent/craftStateSignature.ts, src/modContent/autoCraftExecutor.ts
 review_cycle_days: 30
 related_files:
@@ -41,7 +41,7 @@ Deep reference for the runtime boundary. For the working checklist load the `cra
 
 ## Game-version behaviour that affects integration
 
-Target build **0.7.6-7c586da**. The semantics below arrived with the 0.7.5 harmony rework and were re-verified against the 0.7.6 bundle; `docs/project/RUNTIME_EVIDENCE.md` is the authority for all of them.
+Target build **0.7.17-d8ae6ce**. `docs/project/RUNTIME_EVIDENCE.md` records the audit, including historical 0.7.5/0.7.6 origins and the 0.7.17 phase/cost changes in §17.
 
 ### Harmony resolution
 
@@ -49,9 +49,15 @@ Harmony is a **player choice** and is no longer a function of the item type. `cr
 
 The ModAPI utility `gameData.itemTypeToHarmonyType` was **removed by the game**. CraftBuddy does not reference it and must not grow a replacement heuristic: when the selection cannot be read, harmony data is treated as _missing_ rather than guessed (forge heat is the single exception, recovered from verified runtime mirrors).
 
-Sublime recipe targets are scaled by the selected harmony's complexity multiplier (`applyComplexityMultiplier`), so effective targets must be derived through the optimizer facade rather than read raw off the recipe. The seven multipliers are unchanged in 0.7.6.
+Sublime recipe targets are scaled by the selected harmony's complexity multiplier (`applyComplexityMultiplier`), so effective targets must be derived through the optimizer facade rather than read raw off the recipe. The registry now has nine types, including Captivating Cadence (1.5) and Returning Cycle (1.3).
 
 `harmonyState.ts` hydrates the subsystem state. Two properties matter at this boundary: **every** subsystem it knows about must survive cloning (a missed one silently restarts that state machine on every poll, which is exactly the `cloneHarmonyData` bug fixed in 6.1.0), and absent Eccentric Decree state is seeded from the **current** bars, mirroring the runtime's own lazy seeding so attaching mid-craft cannot retro-charge harmony.
+
+Returning Cycle hydration preserves `charges`, `storedQi`, fixed `chargeSize`, `pulseKey` and `lastOutcome`. Initialization/recovery takes raw starting maxpool, not a later buffed maximum. Returned Precision stays an ordinary hydrated buff; do not convert it to a separate permanent stat.
+
+### 0.7.17 costs, droplets and payloads
+
+Read independent zero-based Qi/stability cost reduction and penalty channels plus `qiDroplets` / `maxQiDroplets`. Preserve `dropletCost` and `noQiCost` in technique extraction. Effect `masteryEntries` remain separate from successful technique effects because they run before recomputed payment even on failure; construction-time static masteries must not run twice. Keep scaling multiplier/rounding fields, buff `additionalVariables` and `setState.keys` through extraction and replay. TS/Rust own simulation; native preview helpers do not replace these execution phases.
 
 ### Native crafting auto-use
 
@@ -122,6 +128,6 @@ Adopting any of them is a future decision, not an oversight.
 
 ## Replay snapshot expectations
 
-Snapshots are parity-grade bug reports: runtime-shaped skill fields, active buff definitions, `harmonyData` plus its provenance, craft-context fields, the current turn, bounded recent history, and auto-mode state. See `docs/project/TESTING.md` for the coverage contract.
+Snapshots are parity-grade bug reports: runtime-shaped skill/mastery fields, droplets and cost channels, active buff definitions, all nine `harmonyData` variants plus provenance (including fixed Cycle charge size), craft-context fields, the current turn, bounded recent history, and auto-mode state. See `docs/project/TESTING.md` for the coverage contract.
 
 When runtime behaviour, help text, older notes and types disagree, the installed bundle wins. Verify with the `runtime-oracle` skill.

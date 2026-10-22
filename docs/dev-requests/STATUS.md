@@ -3,8 +3,8 @@ title: API Request Status
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.10-9bf9078
-last_verified: 2026-09-01
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
 source_of_truth: docs/dev-requests/API_EXPOSURE_REQUESTS.md
 review_cycle_days: 30
 related_files:
@@ -16,7 +16,7 @@ related_files:
 
 # API Request Status
 
-Verified against the installed AFNM **0.7.10** runtime (`0.7.10-9bf9078`); the API surface below is unchanged since 0.7.6 except where a later entry says otherwise. Extraction details are in `docs/project/RUNTIME_EVIDENCE.md`.
+Reviewed against the **6.8.0** integration and installed AFNM **0.7.17-d8ae6ce** crafting audit. The native auto-use dispatch contract remains unchanged; the retarget keeps finalized payment simulation local rather than adopting a new API. Extraction details are in `docs/project/RUNTIME_EVIDENCE.md` §17. The 0.7.5/0.7.6 sections below retain their historical introductions; the current dependency is `afnm-types@0.7.17`.
 
 ## 0.7.6 API changes
 
@@ -27,7 +27,7 @@ Verified against the installed AFNM **0.7.10** runtime (`0.7.10-9bf9078`); the A
 | Buff-interceptor stat filters | **Available, not adopted.** CraftBuddy observes state rather than intercepting it. |
 | Crafting loadouts now name their paired auto-use loadout (`craftingLoadout.craftingAutoUseLoadoutId`) | No change needed: the game resolves the pairing before CraftBuddy reads `currentCraftingAutoUseLoadout`. |
 | New `(This Effect)` self-reference auto-use slot condition | Unmodelled; falls to the conservative "will fire" default in `src/modContent/nativeAutoUse.ts`, which withholds a duplicate rather than causing one. Strengthens follow-up request 3 at the end of this document. |
-| `afnm-types` `0.7.6` | Pinned in `package.json`. |
+| `afnm-types` `0.7.6` | Historical retarget dependency; current `package.json` pins `0.7.17`. |
 
 The Eccentric Decree per-bar-change hook and the Fallen Soulflame re-balance are mechanics changes, not API changes; see `docs/project/MECHANICS_PARITY.md`.
 
@@ -52,7 +52,7 @@ The Eccentric Decree per-bar-change hook and the Fallen Soulflame re-balance are
 | UI injection host | Available | Not adopted yet; candidate replacement for the manual overlay container |
 | Redux action hook (`onReduxAction`) | Available | Not adopted; `subscribe()` + snapshots remain the recommended state-observation path |
 | Redux payload interceptor (`onReduxActionPayload`) | Available | Intercepts/modifies action payloads before reducer. Not adopted; not needed for CraftBuddy's read-only observation pattern |
-| Native action cost preview (`getActionCost`) | Available | Native post-modifier action cost preview |
+| Native action cost preview (`getActionCost`) | Available | Individual scaling preview, not a finalized execution-payment oracle after mastery effects |
 | Native condition evaluator (`evaluateCraftingCondition`) | Available | Native crafting condition evaluation |
 | Native stat resolver (`getActualCraftingStat`) | Available | Native crafting stat resolution |
 | Translation utils (`t`/`tPlural`/`tr`) | Available | Runtime i18n helpers. Not adopted; CraftBuddy UI is English-only |
@@ -82,7 +82,7 @@ These unresolved questions block specific improvements:
 ## Developer follow-up packet
 
 1. Request timeline for finalized post-modifier cost preview helpers.
-2. Request docs that `CraftingTechnique.name` is a stable, non-localized canonical key matching `KnownCraftingTechnique.technique` and `modAPI.gameData.craftingTechniques`.
+2. Canonical `CraftingTechnique.name` documentation was marked fulfilled in `API_EXPOSURE_REQUESTS.md`; no new request is opened by this retarget.
 3. Request a documented, stable shape for crafting auto-use slots (condition group, `maxCount`, item reference) so `projectNativeAutoUse` can evaluate slot conditions instead of conservatively assuming they fire.
 
 ## Update rule

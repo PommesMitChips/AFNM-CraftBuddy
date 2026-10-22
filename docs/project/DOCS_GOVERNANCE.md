@@ -3,8 +3,8 @@ title: Docs Governance
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.10-9bf9078
-last_verified: 2026-09-01
+game_version: 0.7.17-d8ae6ce
+last_verified: 2026-10-22
 source_of_truth: package.json, scripts/docs/*
 review_cycle_days: 30
 related_files:
@@ -32,7 +32,7 @@ For `docs/project/*` and `docs/dev-requests/*`:
 
 `title`, `status`, `authoritative`, `owner`, `last_verified`, `source_of_truth`, `review_cycle_days`, `related_files`
 
-`scripts/docs/check-freshness.js` checks only that those eight are **present**, and `check-authority.js` reads only `status` and `authoritative`, so additional fields are accepted. One is conventional: `game_version`, naming the exact installed build a doc was verified against (currently `0.7.6-7c586da`). Add it to any doc making claims about game mechanics.
+`scripts/docs/check-freshness.js` requires all eight fields and validates the date, positive review cycle and age; `check-authority.js` enforces `status` and `authoritative` by path class. Additional fields are accepted. One is conventional: `game_version`, naming the verified target build (currently `0.7.17-d8ae6ce`). Add it to docs making current mechanics claims; historical release notes retain their original build.
 
 ## Required checks
 
@@ -50,3 +50,4 @@ For `docs/project/*` and `docs/dev-requests/*`:
 - Unresolved assumptions → mark explicitly as unresolved, do not assert as fact.
 - Game-version retarget → edit the runtime and performance evidence docs **in place**. `RUNTIME_EVIDENCE.md` and `ENGINE_PERFORMANCE.md` carry no version in their filenames on purpose, so a new game build never needs a rename and never breaks inbound links.
 - A superseded release's narrative is history — correct a broken link inside it, but do not rewrite what was true at the time. Time-scope a measurement rather than restating it in the present tense.
+- Advance `last_verified` only after reviewing the document against its named sources; passing metadata checks alone does not verify content. Regenerating the inventory verifies that inventory, not every document it lists.

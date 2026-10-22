@@ -24,7 +24,7 @@
  *   beam merge above remains the combining step.
  */
 
-import { CraftingState } from './state';
+import { CraftingState, type CraftingStateData } from './state';
 import type { OptimizerConfig } from './skills';
 import {
   findBestSkill,
@@ -125,8 +125,19 @@ export function runSearchBackendInput(input: SearchBackendInput): SearchResult {
 // into the worker, so `searchBackend.test.ts` pins a byte-identical
 // round-trip over every replay fixture.
 
+type PlainCraftingState = {
+  [K in keyof CraftingStateData]-?: CraftingStateData[K] extends Map<
+    string,
+    infer Value
+  >
+    ? Record<string, Value>
+    :
+        | Exclude<CraftingStateData[K], undefined>
+        | (undefined extends CraftingStateData[K] ? null : never);
+};
+
 export interface PlainSearchInput {
-  state: Record<string, unknown>;
+  state: PlainCraftingState;
   config: Record<string, unknown>;
   targetCompletion: number;
   targetPerfection: number;
@@ -157,6 +168,13 @@ export function serializeSearchInput(
   return {
     state: {
       qi: state.qi,
+      qiDroplets: state.qiDroplets,
+      maxQiDroplets: state.maxQiDroplets,
+      qiCostReduction: state.qiCostReduction,
+      qiCostPenalty: state.qiCostPenalty,
+      stabilityCostReduction: state.stabilityCostReduction,
+      stabilityCostPenalty: state.stabilityCostPenalty,
+      itemEffectiveness: state.itemEffectiveness,
       stability: state.stability,
       initialMaxStability: state.initialMaxStability,
       stabilityPenalty: state.stabilityPenalty,
@@ -217,8 +235,9 @@ export function reviveSearchInput(plain: PlainSearchInput): SearchBackendInput {
     targetCompletion: plain.targetCompletion,
     targetPerfection: plain.targetPerfection,
     lookaheadDepth: plain.lookaheadDepth,
-    currentCondition: (plain.currentCondition ??
-      undefined) as CraftingConditionType | undefined,
+    currentCondition: (plain.currentCondition ?? undefined) as
+      | CraftingConditionType
+      | undefined,
     forecast: plain.forecast as CraftingConditionType[],
     searchConfig: plain.searchConfig as Partial<SearchConfig>,
   };
@@ -251,7 +270,9 @@ export function partitionRootSkillKeys(
   if (partitionCount <= 1) {
     return [...allRootKeys];
   }
-  return allRootKeys.filter((_, index) => index % partitionCount === partitionIndex);
+  return allRootKeys.filter(
+    (_, index) => index % partitionCount === partitionIndex,
+  );
 }
 
 // ── Merging partitioned results ─────────────────────────────────────────────
@@ -340,7 +361,8 @@ export function mergePartitionedResults(
   return {
     recommendation: merged[0] ?? null,
     alternativeSkills: merged.slice(1),
-    isTerminal: !anyCandidates && partials.every((partial) => partial.isTerminal),
+    isTerminal:
+      !anyCandidates && partials.every((partial) => partial.isTerminal),
     targetsMet: partials.some((partial) => partial.targetsMet),
     outcomeProjection: referencePartial?.outcomeProjection,
     blockedReasons: anyCandidates

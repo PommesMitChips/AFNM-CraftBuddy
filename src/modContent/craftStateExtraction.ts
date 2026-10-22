@@ -716,10 +716,7 @@ export function convertGameTechniques(
       | { buffName: string; amount?: number; consumeAll?: boolean }
       | undefined;
 
-    const effects = [
-      ...(sourceTech.effects || []),
-      ...(masteryData.extraEffects || []),
-    ];
+    const effects = [...(sourceTech.effects || [])];
     for (const effect of effects) {
       if (!effect) continue;
 
@@ -904,6 +901,8 @@ export function convertGameTechniques(
       isDisciplinedTouch,
       preventsMaxStabilityDecay,
       toxicityCost: toxicityCost > 0 ? toxicityCost : undefined,
+      dropletCost: sourceTech.dropletCost ?? 0,
+      noQiCost: sourceTech.noQiCost === true,
       toxicityCleanse: toxicityCleanse > 0 ? toxicityCleanse : undefined,
       cooldown: cooldown > 0 ? cooldown : undefined,
       mastery: Object.keys(mastery).length > 0 ? mastery : undefined,

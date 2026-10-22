@@ -206,6 +206,8 @@ export function buildSkillSnapshot(
     type: skill.type,
     actionKind: skill.actionKind || 'skill',
     qiCost: skill.qiCost,
+    dropletCost: skill.dropletCost ?? 0,
+    noQiCost: skill.noQiCost === true,
     stabilityCost: skill.stabilityCost,
     successChance: skill.successChance ?? 1,
     baseCompletionGain: skill.baseCompletionGain,
@@ -251,6 +253,7 @@ export function buildConfigSnapshot(
   config: OptimizerConfig,
 ): Record<string, unknown> {
   return {
+    mechanicsVersion: '0.7.17',
     maxQi: config.maxQi,
     maxStability: config.maxStability,
     maxCompletion: config.maxCompletion ?? null,
@@ -281,6 +284,13 @@ export function buildStateSnapshot(
 ): Record<string, unknown> {
   return {
     qi: state.qi,
+    itemEffectiveness: state.itemEffectiveness,
+    qiDroplets: state.qiDroplets,
+    maxQiDroplets: state.maxQiDroplets,
+    qiCostReduction: state.qiCostReduction,
+    qiCostPenalty: state.qiCostPenalty,
+    stabilityCostReduction: state.stabilityCostReduction,
+    stabilityCostPenalty: state.stabilityCostPenalty,
     stability: state.stability,
     maxStability: state.maxStability,
     initialMaxStability: state.initialMaxStability,
@@ -310,6 +320,9 @@ export function buildStateSnapshot(
     buffs: mapToPlainObject(state.buffs, (buff) => ({
       name: buff.name,
       stacks: buff.stacks,
+      internalState: buff.internalState
+        ? sanitizeForJson(buff.internalState)
+        : undefined,
       definition: buff.definition ? sanitizeForJson(buff.definition) : null,
     })),
     nativeVariables: state.nativeVariables
@@ -323,9 +336,20 @@ export function reviveConfigSnapshot(
 ): OptimizerConfig {
   return {
     ...(snapshot as unknown as OptimizerConfig),
-    skills: ((snapshot.skills as SkillDefinition[]) || []).map((skill) => ({
-      ...skill,
-    })),
+    skills: ((snapshot.skills as SkillDefinition[]) || []).map((skill) => {
+      const native = skill.nativeTechnique;
+      // Older snapshots flattened mastery effects while retaining raw entries.
+      // The saved native tree keeps technique effects separate from masteries.
+      const legacyEffects =
+        snapshot.mechanicsVersion === undefined &&
+        native !== null &&
+        typeof native === 'object' &&
+        'effects' in native &&
+        Array.isArray(native.effects)
+          ? (native.effects as SkillDefinition['effects'])
+          : undefined;
+      return { ...skill, ...(legacyEffects ? { effects: legacyEffects } : {}) };
+    }),
   };
 }
 

@@ -42,7 +42,8 @@ export type HarmonyType =
   | 'formless'
   | 'enhancingEcho'
   | 'eccentricDecree'
-  | 'captivatingCadence';
+  | 'captivatingCadence'
+  | 'returningCycle';
 
 /**
  * Scaling definition matching game's Scaling type.
@@ -61,6 +62,14 @@ export interface Scaling {
   customScaling?: { multiplier: number; scaling: string; upgradeKey?: string };
   /** Additive equation */
   additiveEqn?: string;
+  multiplier?: Scaling;
+  scalingMax?: Scaling;
+  roundToInteger?: boolean;
+  scalesWithRoomEffectiveness?: boolean;
+  scalesWithCharisma?: boolean;
+  charismaScalingPivot?: number;
+  isItem?: boolean;
+  multiplyByStanceLength?: boolean;
   /** Maximum value cap */
   max?: Scaling;
   /** Game flag for multi-stance contexts (crafting uses 1). */
@@ -136,6 +145,7 @@ export interface BuffEffect {
    * default) or accumulate ('add').
    */
   key?: string;
+  keys?: string[];
   value?: Scaling;
   mode?: 'set' | 'add';
 }
@@ -178,6 +188,7 @@ export interface BuffStats {
  * Complete buff definition matching game structure.
  */
 export interface BuffDefinition {
+  additionalVariables?: Record<string, number>;
   name: string;
   buffType?: string;
   icon?: string;
@@ -296,6 +307,8 @@ export interface TechniqueDefinition {
   icon?: string;
   poolCost: number;
   toxicityCost?: number;
+  dropletCost?: number;
+  noQiCost?: boolean;
   stabilityCost: number;
   noMaxStabilityLoss?: boolean;
   successChance: number; // 0-1
@@ -426,6 +439,14 @@ export interface CaptivatingCadenceData {
  *
  * Formless Way has no sub-system state: it simply pins harmony at 33.
  */
+export interface ReturningCycleData {
+  charges: number;
+  storedQi: number;
+  chargeSize: number;
+  pulseKey?: number;
+  lastOutcome?: 'charge' | 'drain' | 'release';
+}
+
 export interface HarmonyData {
   forgeWorks?: ForgeWorksData;
   alchemicalArts?: AlchemicalArtsData;
@@ -434,6 +455,7 @@ export interface HarmonyData {
   enhancingEcho?: EnhancingEchoData;
   eccentricDecree?: EccentricDecreeData;
   captivatingCadence?: CaptivatingCadenceData;
+  returningCycle?: ReturningCycleData;
   recommendedTechniqueTypes: TechniqueType[];
   /**
    * Optional extensible payload used by some harmony systems.
@@ -458,8 +480,6 @@ export interface ScalingVariables {
   itemEffectiveness: number;
   pillsPerRound: number;
   poolCostFlat: number;
-  poolCostPercentage: number;
-  stabilityCostPercentage: number;
   successChanceBonus: number;
   stacks: number;
   /**
@@ -810,6 +830,7 @@ export function evaluateScaling(
   scaling: Scaling | undefined,
   variables: ScalingVariables,
   defaultValue: number = 0,
+  preMaxTransform?: (value: number) => number,
 ): number {
   if (!scaling) return defaultValue;
 
@@ -828,12 +849,23 @@ export function evaluateScaling(
 
   // Multiply by scaling variable if specified
   if (scaling.scaling) {
-    result *= getVariableValue(variables, scaling.scaling);
+    let value = getVariableValue(variables, scaling.scaling);
+    if (scaling.scalingMax) {
+      const cap = evaluateScaling(scaling.scalingMax, variables);
+      value = cap < 0 ? Math.max(value, cap) : Math.min(value, cap);
+    }
+    result *= value;
   }
 
   // Apply custom equation
   if (scaling.eqn) {
     result *= evalExpression(scaling.eqn, variables);
+  }
+
+  if (scaling.isItem) result *= 1 + (variables.itemEffectiveness ?? 0) / 100;
+  if (scaling.scalesWithCharisma) {
+    const pivot = scaling.charismaScalingPivot ?? 0;
+    result = pivot + (result - pivot) * (variables.charismaMultiplier ?? 1);
   }
 
   // Apply custom scaling with multiplier
@@ -849,16 +881,24 @@ export function evaluateScaling(
   if (scaling.additiveEqn) {
     result += evalExpression(scaling.additiveEqn, variables);
   }
+  if (scaling.scalesWithRoomEffectiveness) {
+    result *= 1 + (variables.roomEffectiveness ?? 0) / 100;
+  }
 
   if (result > 10) {
     result = Math.floor(result);
   } else if (result < -10) {
     result = Math.ceil(result);
   } else {
-    result = parseFloat(result.toFixed(2));
+    result = parseFloat(result.toFixed(Math.abs(result) < 0.01 ? 4 : 2));
     if (result % 1 === 0) {
       result = Math.floor(result);
     }
+  }
+
+  if (preMaxTransform) result = preMaxTransform(result);
+  if (scaling.multiplier) {
+    result *= evaluateScalingMultiplier(scaling.multiplier, variables);
   }
 
   // Apply max cap
@@ -871,8 +911,47 @@ export function evaluateScaling(
   if (scaling.divideByStanceLength) {
     result = Math.floor(result);
   }
+  if (scaling.multiplyByStanceLength) result = Math.floor(result);
+  if (scaling.roundToInteger) result = Math.round(result);
 
   return result;
+}
+
+function evaluateScalingMultiplier(
+  scaling: Scaling,
+  vars: ScalingVariables,
+): number {
+  if (
+    scaling.value > 0 &&
+    scaling.value < 1 &&
+    scaling.stat === undefined &&
+    scaling.scaling !== undefined
+  ) {
+    const step = Math.floor(1 / scaling.value);
+    const count = vars[scaling.scaling] ?? 0;
+    let result: number;
+    if (scaling.increment !== undefined && scaling.increment > 0) {
+      const a = scaling.increment / 2;
+      const b = step - a;
+      const discriminant = b * b + 4 * a * count;
+      result =
+        discriminant < 0
+          ? 0
+          : Math.floor((-b + Math.sqrt(discriminant)) / (2 * a));
+    } else result = Math.floor(count / step);
+    if (scaling.additiveEqn)
+      result += evalExpression(scaling.additiveEqn, vars);
+    if (scaling.max)
+      result = Math.min(result, evaluateScaling(scaling.max, vars));
+    return result;
+  }
+  // Runtime applies ceil before this multiplier's own nested multiplier/max.
+  return evaluateScaling(
+    { ...scaling, value: scaling.value },
+    vars,
+    0,
+    Math.ceil,
+  );
 }
 
 /**

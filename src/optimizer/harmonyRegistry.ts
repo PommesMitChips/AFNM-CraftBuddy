@@ -30,7 +30,7 @@
 
 import { HarmonyType } from './gameTypes';
 
-/** Every harmony type available in 0.7.6, in the game's own registry order. */
+/** Every harmony type available in 0.7.17, in the game's own registry order. */
 export const HARMONY_TYPES: readonly HarmonyType[] = [
   'forge',
   'alchemical',
@@ -40,6 +40,7 @@ export const HARMONY_TYPES: readonly HarmonyType[] = [
   'enhancingEcho',
   'eccentricDecree',
   'captivatingCadence',
+  'returningCycle',
 ];
 
 /** Harmony value Formless Way holds for the whole craft (runtime `dRa`). */
@@ -142,6 +143,14 @@ const DEFINITIONS: Readonly<Record<HarmonyType, HarmonyDefinition>> = {
     id: 'captivatingCadence',
     name: 'Captivating Cadence',
     complexityMultiplier: 1.5,
+    startingHarmony: 0,
+    modifiesActionCosts: false,
+    pinsHarmony: false,
+  },
+  returningCycle: {
+    id: 'returningCycle',
+    name: 'Returning Cycle',
+    complexityMultiplier: 1.3,
     startingHarmony: 0,
     modifiesActionCosts: false,
     pinsHarmony: false,

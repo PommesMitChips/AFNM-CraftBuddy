@@ -12,13 +12,13 @@ A mod for **Ascend From Nine Mountains** that calculates and displays the recomm
 - Alternative action suggestions
 - Lookahead search with presets and manual performance controls
 - Condition forecast awareness and probabilistic branching beyond forecast queue
-- Harmony-aware simulation for all seven harmonies, including their complexity multipliers
+- Harmony-aware simulation for all nine harmonies, including Returning Cycle and their complexity multipliers
 - Buff, mastery, Soulflame, and toxicity-aware simulation
 - Coexists with the game's crafting auto-use loadout instead of double-spending pills
 - Large-number-safe parsing and formatting for late-game values
 - Snapshot export for bug reports and replayable optimizer debugging
 
-Built for game version **0.7.10**.
+CraftBuddy **6.8.0**, built for game version **0.7.17-d8ae6ce**.
 
 ![CraftBuddy Workshop Preview](pictures/workshop_preview.png)
 
@@ -85,7 +85,7 @@ Depth, time, nodes, and beam width are coupled search-budget controls: pushing o
 If the sibling uploader repo is available at `../ModUploader-AFNM`, you can publish the current build directly from this repo:
 
 ```bash
-bun run workshop:upload -- --change-note "What changed"
+bun run workshop:upload -- --change-note "v6.8.0 - AFNM 0.7.17 compatibility and Returning Cycle support" --description-file docs/project/WORKSHOP_DESCRIPTION.md
 ```
 
 That rebuilds CraftBuddy, prepares `ModUploader-AFNM`, and updates workshop item `3661729323`. Steam must be running and logged in locally.
@@ -144,7 +144,7 @@ Output zip: `builds/afnm-craftbuddy.zip`
 - Optimizer (`src/optimizer/*`, behind a single `index.ts` facade) simulates candidate actions and runs lookahead search.
 - `src/optimizer/outcome.ts` is the single authority for band thresholds, outcome tiers, and the auto-finish predicate.
 - Search combines deterministic simulation with expected-value modeling for probabilistic outcomes, plus a guaranteed survivability floor so a craft is never bet on a recovery proc.
-- A Rust/WASM engine (`crates/craftbuddy-engine/`) models the same mechanics and supplies a search prior; parity is proven by a differential corpus of 137 scenarios and 1,471 transitions.
+- A Rust/WASM engine (`crates/craftbuddy-engine/`) models the same mechanics and supplies a search prior; the differential corpus has 172 scenarios / 1,549 cases (1,347 legal transitions, plus 202 illegal-action checks).
 - UI (`src/ui/*`) renders the recommendation, outcome rows, and alternatives.
 
 ## Technical notes
@@ -170,7 +170,7 @@ CraftBuddy prefers direct game data when available and uses documented fallback 
 ## Documentation
 
 - Authoritative project docs: `docs/project/`
-- Latest release notes: `docs/project/RELEASE_NOTES_6.7.0.md`
+- Latest release notes: `docs/project/RELEASE_NOTES_6.8.0.md`; release history: `CHANGELOG.md`
 - Dev API request tracking: `docs/dev-requests/`
 - Curated AFNM reference subset: `docs/reference/`
 - Agent entrypoint: `docs/project/START_HERE_FOR_AGENTS.md`
