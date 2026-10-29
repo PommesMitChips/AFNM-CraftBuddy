@@ -9,11 +9,7 @@
  * Crafting condition types matching the game.
  */
 export type CraftingCondition =
-  | 'neutral'
-  | 'positive'
-  | 'negative'
-  | 'veryPositive'
-  | 'veryNegative';
+  'neutral' | 'positive' | 'negative' | 'veryPositive' | 'veryNegative';
 
 /**
  * Technique action types.
@@ -157,6 +153,7 @@ export interface BuffEffect {
  * change's share of the recipe with threshold inflation priced in.
  */
 export type CraftingBuffTrigger =
+  | 'actionFailed'
   | 'poolSpent'
   | 'poolRestored'
   | 'stabilitySpent'
@@ -520,13 +517,11 @@ export interface NativeCraftingUtils {
 }
 
 let activeNativeCraftingUtils: NativeCraftingUtils | undefined;
-let warnedNativeOvercritFailure = false;
 
 export function setNativeCraftingUtils(
   nativeUtils: NativeCraftingUtils | undefined,
 ): void {
   activeNativeCraftingUtils = nativeUtils;
-  warnedNativeOvercritFailure = false;
 }
 
 /**
@@ -573,37 +568,14 @@ export function calculateExpectedCritMultiplier(
   critChance: number,
   critMultiplier: number,
 ): number {
-  const nativeOvercrit = activeNativeCraftingUtils?.calculateCraftingOvercrit;
-  if (nativeOvercrit) {
-    try {
-      const nativeResult = nativeOvercrit(critChance, critMultiplier);
-      const nativeCritMultiplier = Number(nativeResult?.multiplier);
-      if (Number.isFinite(nativeCritMultiplier) && nativeCritMultiplier > 0) {
-        const actualCritChance = Math.min(Math.max(critChance, 0), 100) / 100;
-        // The runtime already divides by 100 inside calculateCraftingOvercrit
-        // (`(critMultiplier + Math.max(0, critChance - 100) * 3) / 100`), so the
-        // returned multiplier is a ratio (1.5 for a 150% crit). Dividing again
-        // here collapsed every crit to ~1.005x.
-        return 1 - actualCritChance + actualCritChance * nativeCritMultiplier;
-      }
-    } catch (error) {
-      if (!warnedNativeOvercritFailure) {
-        console.warn(
-          '[CraftBuddy] Native calculateCraftingOvercrit failed, using local fallback:',
-          error,
-        );
-        warnedNativeOvercritFailure = true;
-      }
-    }
-  }
-
+  // The native 0.7.18 helper ROLLS randomness; calling it is not an EV calculation.
   // Excess crit chance (>100%) converts to bonus multiplier at 1:3 ratio
   const excessCritChance = Math.max(0, critChance - 100);
   const bonusCritMultiplier = excessCritChance * 3;
   const effectiveCritMultiplier = critMultiplier + bonusCritMultiplier;
 
   // For deterministic simulation, use expected value
-  const actualCritChance = Math.min(critChance, 100) / 100;
+  const actualCritChance = Math.max(0, Math.min(critChance, 100)) / 100;
   const critMultiplierAsRatio = effectiveCritMultiplier / 100;
 
   // Expected value: (1 - critChance) * 1 + critChance * multiplier
@@ -681,8 +653,7 @@ function cacheCompiledExpression(
     EXPRESSION_CACHE.size >= MAX_EXPRESSION_CACHE_SIZE
   ) {
     const oldestKey = EXPRESSION_CACHE.keys().next().value as
-      | string
-      | undefined;
+      string | undefined;
     if (oldestKey !== undefined) {
       EXPRESSION_CACHE.delete(oldestKey);
     }

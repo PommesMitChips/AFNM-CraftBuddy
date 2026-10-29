@@ -1,4 +1,5 @@
 import { BuffType, CraftingState } from '../optimizer/state';
+import { comparePlanningValues } from '../optimizer/constrainedPlanner';
 import {
   findBestSkill,
   lookaheadSearch,
@@ -1189,9 +1190,14 @@ describe('integration regression - forge heat parity', () => {
     ]);
     expect(result.recommendation?.skill.type).not.toBe('fusion');
     expect(explosiveFusionRecommendation).toBeDefined();
-    expect(result.recommendation!.score).toBeGreaterThan(
-      explosiveFusionRecommendation!.score,
-    );
+    expect(result.recommendation!.planning).toBeDefined();
+    expect(explosiveFusionRecommendation!.planning).toBeDefined();
+    expect(
+      comparePlanningValues(
+        result.recommendation!.planning!,
+        explosiveFusionRecommendation!.planning!,
+      ),
+    ).toBeLessThan(0);
 
     const nextState = applySkill(
       state,

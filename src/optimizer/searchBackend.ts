@@ -25,6 +25,7 @@
  */
 
 import { CraftingState, type CraftingStateData } from './state';
+import { comparePlanningValues } from './constrainedPlanner';
 import type { OptimizerConfig } from './skills';
 import {
   findBestSkill,
@@ -131,9 +132,8 @@ type PlainCraftingState = {
     infer Value
   >
     ? Record<string, Value>
-    :
-        | Exclude<CraftingStateData[K], undefined>
-        | (undefined extends CraftingStateData[K] ? null : never);
+    : | Exclude<CraftingStateData[K], undefined>
+      | (undefined extends CraftingStateData[K] ? null : never);
 };
 
 export interface PlainSearchInput {
@@ -236,8 +236,7 @@ export function reviveSearchInput(plain: PlainSearchInput): SearchBackendInput {
     targetPerfection: plain.targetPerfection,
     lookaheadDepth: plain.lookaheadDepth,
     currentCondition: (plain.currentCondition ?? undefined) as
-      | CraftingConditionType
-      | undefined,
+      CraftingConditionType | undefined,
     forecast: plain.forecast as CraftingConditionType[],
     searchConfig: plain.searchConfig as Partial<SearchConfig>,
   };
@@ -281,6 +280,13 @@ function compareMergedCandidates(
   a: SkillRecommendation,
   b: SkillRecommendation,
 ): number {
+  if (a.planning && b.planning)
+    return (
+      comparePlanningValues(a.planning, b.planning) ||
+      a.skill.key.localeCompare(b.skill.key)
+    );
+  if (a.requiresProbabilisticSurvival !== b.requiresProbabilisticSurvival)
+    return a.requiresProbabilisticSurvival ? 1 : -1;
   if (b.score !== a.score) {
     return b.score - a.score;
   }
@@ -288,6 +294,14 @@ function compareMergedCandidates(
 }
 
 function recomputeQualityRatings(candidates: SkillRecommendation[]): void {
+  if (candidates.every((c) => c.planning)) {
+    candidates.forEach((c, i) => {
+      c.qualityRating = Math.round(
+        (100 * (candidates.length - i)) / candidates.length,
+      );
+    });
+    return;
+  }
   if (candidates.length === 0) {
     return;
   }
@@ -315,7 +329,7 @@ export function mergePartitionedResults(
 
   const pooled = new Map<string, SkillRecommendation>();
   let winningPartial: SearchResult | undefined;
-  let bestScore = -Infinity;
+  let bestCandidate: SkillRecommendation | undefined;
   for (const partial of partials) {
     const candidates = [
       ...(partial.recommendation ? [partial.recommendation] : []),
@@ -323,11 +337,14 @@ export function mergePartitionedResults(
     ];
     for (const candidate of candidates) {
       const existing = pooled.get(candidate.skill.key);
-      if (!existing || candidate.score > existing.score) {
+      if (!existing || compareMergedCandidates(candidate, existing) < 0) {
         pooled.set(candidate.skill.key, candidate);
       }
-      if (candidate.score > bestScore) {
-        bestScore = candidate.score;
+      if (
+        !bestCandidate ||
+        compareMergedCandidates(candidate, bestCandidate) < 0
+      ) {
+        bestCandidate = candidate;
         winningPartial = partial;
       }
     }

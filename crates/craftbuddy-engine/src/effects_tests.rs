@@ -81,6 +81,75 @@ fn apply_0717(
 }
 
 #[test]
+fn stability_payment_debt_survives_until_end_of_turn() {
+    let mut state = base_state();
+    state.stability = 1.0;
+    state.buffs = serde_json::from_value(json!([{
+        "key": "restore", "name": "Restore", "stacks": 1,
+        "internal_state": { "paid": 0 },
+        "definition": { "name": "Restore", "canStack": false,
+            "effects": [{ "kind": "stability", "amount": { "value": 7.0 } }],
+            "triggeredEffects": [{ "trigger": "stabilitySpent", "effects": [
+                { "kind": "setState", "key": "paid", "mode": "set",
+                    "value": { "value": 1, "eqn": "amount" } }
+            ] }] }
+    }]))
+    .unwrap();
+    let subject = skill(merge(
+        minimal_skill("spend"),
+        json!({ "stability_cost": 10.0 }),
+    ));
+    let next = apply_0717(&state, subject, &base_config()).unwrap();
+    // Runtime: 1 - 10 + 7 = -2, then clamp once. The former early clamp gave 7.
+    assert_eq!(next.stability, 0.0);
+    assert_eq!(next.buffs[0].internal_state.get("paid"), Some(&10.0));
+}
+
+#[test]
+fn stability_excess_survives_until_harmony_and_final_cap() {
+    let mut state = base_state();
+    state.stability = 59.0;
+    state.harmony_data = serde_json::from_value(json!({
+        "recommended_technique_types": [],
+        "resonance": { "resonance": "fusion", "strength": 1,
+            "pending_count": 0 }
+    }))
+    .unwrap();
+    let mut config = base_config();
+    config.is_sublime_craft = true;
+    config.crafting_type = Some("resonance".to_string());
+    let subject = skill(merge(
+        minimal_skill("restore"),
+        json!({
+            "effects": [{ "kind": "stability", "amount": { "value": 20.0 } }]
+        }),
+    ));
+    let next = apply_0717(&state, subject, &config).unwrap();
+    // 59 + 20 - 3 resonance loss = 76; decay lowers the final cap to 59.
+    // Clamping before resonance would incorrectly leave 57.
+    assert_eq!(next.stability, 59.0);
+    assert_eq!(next.stability_penalty, 1.0);
+}
+
+#[test]
+fn mastery_stability_excess_survives_until_real_action_payment() {
+    let mut state = base_state();
+    state.stability = 59.0;
+    let subject = skill(merge(
+        minimal_skill("mastery_restore"),
+        json!({
+            "stability_cost": 10.0,
+            "mastery_entries": [{ "kind": "effect", "effects": [
+                { "kind": "stability", "amount": { "value": 20.0 } }
+            ] }]
+        }),
+    ));
+    let next = apply_0717(&state, subject, &base_config()).unwrap();
+    // Mastery is part of the same action: 59 + 20 - 10, then final cap 59.
+    assert_eq!(next.stability, 59.0);
+}
+
+#[test]
 fn review_fractional_cost_channels_do_not_apply_a_legacy_floor() {
     let mut state = base_state();
     state.qi_cost_reduction = Some(15.5);

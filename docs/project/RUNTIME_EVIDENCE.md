@@ -3,9 +3,9 @@ title: Runtime Evidence
 status: active
 authoritative: true
 owner: craftbuddy-maintainers
-game_version: 0.7.17-d8ae6ce
-last_verified: 2026-10-22
-source_of_truth: installed AFNM 0.7.17 runtime bundle (scripts/installed-game-runtime.js); earlier sections identify their historical builds
+game_version: 0.7.18-97c093b
+last_verified: 2026-10-29
+source_of_truth: installed AFNM 0.7.18 runtime bundle; earlier sections identify their historical builds and coverage
 review_cycle_days: 90
 related_files:
   - docs/project/MECHANICS_PARITY.md
@@ -26,7 +26,7 @@ related_files:
 # Runtime Evidence
 
 Findings extracted from the **installed** AFNM runtime, most recently
-**0.7.17-d8ae6ce** (section 17). Earlier sections retain their historical build
+**0.7.18-97c093b** (section 18). Earlier sections retain their historical build
 citations. The runtime is the sole authority here: where a tooltip, a
 patch note, or an earlier CraftBuddy note disagrees with the code below, the code
 below wins.
@@ -742,6 +742,10 @@ extras have diminishing value past that cap on quality-kind recipes.
 
 ### 12.5 Auto-finish predicate for overcraft crafts (re-verified)
 
+Historical evidence only: the five-band shortcut below is absent in installed
+0.7.18. Section 18 is the current auto-finish authority; section 17.7 also
+records the flat-cap rule for 0.7.17. Preserve this section as versioned evidence.
+
 The craft-complete flag in the 0.7.6 `Game.js`:
 
 ```js
@@ -1424,4 +1428,75 @@ check pass. Source tests, WASM/build/corpus generation, benchmarks, and live UI
 checks were not run in this read-only implementation audit. Only this evidence
 document was changed in the repository; no phase-2 work or commit was started.
 
+## 18. Installed 0.7.18 auto-finish correction (2026-10-29)
+
+The audit's extracted `package.json` reports **0.7.18-97c093b**. The formatted
+`Game.pretty.js` SHA-256 is
+`d960c947d7b1e8f329183e27dc24a610f54c7c128a15d2e5cc1bd503dbca6e05`.
+The raw `dist-electron/Game.js` SHA-256 is
+`cc6ca4a00d277d5ddf86262cbc786fba8f7b27c823d0c3b788aec8d7f4fb9b4e`.
+Line numbers below refer to that exact formatted artifact; formatting changes
+locations, so recover the alias and re-check the body on another build.
+
+`Game.pretty.js:318431-318438` defines the two cap getters and `Eho`:
+
+```js
+Tho = (e, t, n, r = 0) => bho(t.completion, e, n, e.canOvercraft ?? !1, r),
+IF = (e, t, n, r = 0) => bho(t.perfection, e, n, e.canOvercraft ?? !1, r),
+Eho = (e, t, n, r, i = 0) => {
+  if (e.stability <= 0) return !0;
+  let a = Tho(t, n, r, i).flat,
+    o = IF(t, n, r, i).flat;
+  return e.completion >= a && e.perfection >= o;
+},
+```
+
+There is **no five-completion-band early-finish branch**. The historical
+five-band shortcut described in section 12.5 must not be applied to this
+runtime. Section 17.7 had already recorded the same flat-cap predicate for
+0.7.17, but the TypeScript `willAutoFinish` still retained the older shortcut.
+That mismatch could tell search a high-cap craft had ended while the game still
+allowed more completion. The correction removes only the obsolete shortcut;
+band thresholds, actual item tiers and user-selected goals remain independent.
+
+Example: with completion cap 2000, perfection cap 399 and base widths 100,
+completion 902 (five bands), perfection 399 and stability 50 is still live.
+Reaching both actual flats 2000/399, or stability 0, ends it. These boundaries are
+covered in `src/__tests__/outcome.test.ts`.
+
+This is static installed-artifact evidence. It does not establish full 0.7.18
+mechanics parity or a live gameplay validation.
+
 <!-- prettier-ignore-end -->
+
+### 18.1 Stability payment, failure streaks and critical chains
+
+Additional static checks against the same 0.7.18 artifact:
+
+- `RLc` at formatted line 539835 adds the full negative stability payment to
+  the live bar and emits `stabilitySpent` with that full amount. It does not
+  clamp the bar to zero. `gRc` at 541070 clamps after buffs and harmony. Thus
+  starting at 1, paying 10, then restoring 7 still ends at 0. Clamping before
+  recovery invents survival. Both transition implementations now defer that
+  clamp; mastery subphases also preserve the intermediate value.
+- `KLc` at 540210 is a per-technique failure-streak map. `JLc` at 540221
+  calibrates the increasing-roll coefficient by 64 bisection iterations over
+  expected trial count. The success check at 540687 uses
+  `min(1, coefficient * (failures + 1))`, then resets on success. The map is
+  not reset in the inspected `initCrafting` reducer. Current-craft
+  `actionTracking[name].attempts` proves the streak only after a recorded
+  success. An unknown carry-over is modeled with robust bounds over both
+  outcomes, not a fabricated exact probability.
+- `oho` at 318150 implements independent critical applications, up to nine
+  additional critical-chain rolls using `overcrit`. Values above 90 add to
+  the multiplier; the chain chance is floored after each multiplication.
+  The native helper itself draws randomness, so it must never be called as
+  an expected-value calculation. The new branch resolver implements its
+  arithmetic without invoking the live RNG.
+- `eRc` at 540717 dispatches `actionFailed` before the ordinary turn tick.
+  Nine Fates Flame uses that event (265817 onward). Branch simulation now
+  retains the resulting whole buff on the failed branch.
+
+These checks are covered by `stochasticTransitions.test.ts`, the survival
+regressions, PRD extraction tests, and Rust stability-phase regressions. They
+remain scoped evidence, not an exhaustive audit of all 0.7.18 effects.

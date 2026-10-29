@@ -3156,6 +3156,7 @@ pub fn apply_skill_with_buffs(
         perfection: state.perfection,
         bar_contributions: Vec::new(),
         payment_costs: None,
+        mastery_phase: false,
     };
     if let Some(cost) = &skill.buff_cost {
         let have = buffs.stacks(&cost.buff_name);
@@ -3182,6 +3183,7 @@ pub fn apply_skill_with_buffs(
         target_completion,
         &phase,
     );
+    phase.mastery_phase = true;
     for entry in &skill.mastery_entries {
         if entry.kind != "effect" {
             continue;
@@ -3224,6 +3226,7 @@ pub fn apply_skill_with_buffs(
         );
     }
     phase.success_chance = captured_success;
+    phase.mastery_phase = false;
     // Keep HEAD's expected-stack approximation for subsequent turns; integrate
     // realized, individually rounded outcomes only for this action's payment.
     phase.payment_costs = payment_costs;
@@ -3246,6 +3249,7 @@ struct ActionPhaseContext {
     perfection: f64,
     bar_contributions: Vec<BarContribution>,
     payment_costs: Option<EffectiveActionCosts>,
+    mastery_phase: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3353,6 +3357,7 @@ fn expected_mastery_payment(
                         perfection: phase.perfection,
                         bar_contributions: Vec::new(),
                         payment_costs: None,
+                        mastery_phase: true,
                     };
                     apply_skill_transition(
                         env,
@@ -3457,7 +3462,6 @@ fn apply_skill_transition(
     let max_stability_sealed = has_sealed_max_stability_buff(active_buffs);
     let mut penalty = state.stability_penalty;
     penalty = penalty.min(initial_max);
-    let mut new_max_stability = initial_max - penalty;
     if skill.max_stability_change != 0.0 {
         let effective_change = if max_stability_sealed && skill.max_stability_change > 0.0 {
             0.0
@@ -3465,18 +3469,18 @@ fn apply_skill_transition(
             skill.max_stability_change
         };
         penalty = (penalty - effective_change).max(0.0).min(initial_max);
-        new_max_stability = initial_max - penalty;
     }
     if skill.restores_max_stability_to_full && !max_stability_sealed {
         penalty = 0.0;
-        new_max_stability = initial_max;
     }
 
     let mut new_stability = state.stability - costs.stability_cost + gains.stability;
     if phase.payment_costs.is_none() {
         new_stability = new_stability.floor();
     }
-    new_stability = clamp(new_stability, 0.0, new_max_stability);
+    // The runtime preserves stability debt and excess through all effects.
+    // Only the final turn boundary clamps; an early clamp forgives payment
+    // debt or discards restoration that a later harmony penalty consumes.
 
     let mut new_toxicity = state.toxicity;
     if gains.toxicity_cleanse > 0.0 {
@@ -3722,7 +3726,7 @@ fn apply_skill_transition(
             dispatch_buff_triggers(
                 &mut buffs,
                 "stabilitySpent",
-                costs.stability_cost.min(state.stability),
+                costs.stability_cost,
                 0.0,
                 &action_vars,
                 state,
@@ -4134,17 +4138,9 @@ fn apply_skill_transition(
             technique_max_stability_delta
         };
         penalty = (penalty - effective_delta).max(0.0).min(initial_max);
-        let bound = initial_max - penalty;
-        if new_stability > bound {
-            new_stability = bound;
-        }
     }
 
-    new_stability = clamp(
-        new_stability + buff_stability_delta,
-        0.0,
-        initial_max - penalty,
-    );
+    new_stability += buff_stability_delta;
     new_qi = clamp(new_qi + buff_pool_delta, 0.0, qi_cap);
     new_toxicity = (new_toxicity + buff_toxicity_delta).max(0.0);
     if buff_max_stability_delta != 0.0 {
@@ -4154,10 +4150,6 @@ fn apply_skill_transition(
             buff_max_stability_delta
         };
         penalty = (penalty - effective_delta).max(0.0).min(initial_max);
-        let bound = initial_max - penalty;
-        if new_stability > bound {
-            new_stability = bound;
-        }
     }
 
     profile_count!(StateClone);
@@ -4244,11 +4236,7 @@ fn apply_skill_transition(
             100.0,
         );
         if result.stability_delta != 0.0 {
-            next.stability = clamp(
-                next.stability + result.stability_delta,
-                0.0,
-                initial_max - next.stability_penalty,
-            );
+            next.stability += result.stability_delta;
         }
         if result.pool_delta != 0.0 {
             next.qi = clamp(next.qi + result.pool_delta, 0.0, qi_cap);
@@ -4271,10 +4259,6 @@ fn apply_skill_transition(
         if result.stability_penalty_delta != 0.0 {
             next.stability_penalty =
                 (next.stability_penalty + result.stability_penalty_delta).min(initial_max);
-            let bound = initial_max - next.stability_penalty;
-            if next.stability > bound {
-                next.stability = bound;
-            }
         }
     }
 
@@ -4299,7 +4283,9 @@ fn apply_skill_transition(
     // Preserve the expectation of chance-gated integer penalties, rather
     // than rounding their weighted average up to a certain extra loss.
     next.stability_penalty = next.stability_penalty.clamp(0.0, initial_max);
-    next.stability = clamp(next.stability, 0.0, initial_max - next.stability_penalty);
+    if !phase.mastery_phase {
+        next.stability = clamp(next.stability, 0.0, initial_max - next.stability_penalty);
+    }
     next
 }
 
