@@ -22,13 +22,13 @@ Authority order: installed runtime bundle → tests → this document. When they
 
 ## October 2026 audit and planner revision
 
-The installed runtime inspected in the audit was **0.7.18-97c093b**, while CraftBuddy 6.8.0 targeted 0.7.17. Historical corpus counts and release results below describe that earlier baseline, not exhaustive proof of 0.7.18 or the new planner. Current results and all 28 automated-review dispositions are recorded in [PR4_REVIEW_VALIDATION.md](PR4_REVIEW_VALIDATION.md).
+The installed runtime inspected in the audit was **0.7.18-97c093b**, while CraftBuddy 6.8.0 targeted 0.7.17. Historical corpus counts and release results below describe that earlier baseline, not exhaustive proof of 0.7.18 or the new planner. Current results and all recorded automated-review dispositions are recorded in [PR4_REVIEW_VALIDATION.md](PR4_REVIEW_VALIDATION.md).
 
 The production planner now uses discrete supported success, crit and effect chance branches from the TypeScript transition model. Future buff state stays inside those branches; bounded enumeration records unresolved probability rather than pretending unexplored outcomes are safe. A separate handwritten stability simulation is not authoritative: payment and mastery phases must agree with the action transition used for planning. Expected-value APIs remain for display and legacy/reference search.
 
 `resolvePlanningGoals` separates requested completion/perfection from actual item tiers. Explicit 1-8 band settings request both bars up to their actual caps. Auto requests the caps with extra-band ambition enabled, or the ordinary tier requirements with it disabled. Missing caps fall back to ordinary requirements. The persisted completion ceiling key now represents a Completion Band Goal. Item tiers and band thresholds are unchanged. The old five-completion-band early-finish shortcut was removed from the model after checking installed 0.7.18: resolution requires stability zero or both actual cap flats. The same flat-cap rule was already recorded in the 0.7.17 runtime evidence.
 
-New goal tests demonstrate full-bar restoration is unnecessary, selected-goal work remains after baseline success, and immediate terminal scores retain the same goal settings at every depth. These tests do not prove every requested craft feasible or all effects supported. Any unsupported effect or exhausted branch budget must be distinguished from a proven safe continuation.
+New goal tests demonstrate that provably inert full-bar restoration can be pruned while recovery that unlocks cooldowns or useful buffs remains available, selected-goal work remains after baseline success, and immediate terminal scores retain the same goal settings at every depth. These tests do not prove every requested craft feasible or all effects supported. Any unsupported effect or exhausted branch budget must be distinguished from a proven safe continuation.
 
 Rust remains a reference for the historical transition surface. Its old EV scorer/prior does not implement the new production planner or certify its goal semantics. Do not infer new cross-engine parity from the older corpus.
 

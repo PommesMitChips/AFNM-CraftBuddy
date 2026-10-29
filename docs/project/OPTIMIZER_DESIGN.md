@@ -87,14 +87,14 @@ Native auto-use is a pre-technique transition, not permission to double-consume 
 
 `findBestSkill` routes to `constrainedSearch`. It builds a sparse, bounded AND/OR graph: player choices are decision nodes; each action's possible outcomes are chance branches. Bellman backups evaluate contingent continuations rather than scoring one averaged state as if it occurred.
 
-For two fully resolved policies, decision priorities are lexicographic:
+All policies use one transitive lexicographic ordering:
 
-1. Lower bound on the probability of achieving **both** selected goals.
-2. Avoid premature terminal outcomes while goals remain unmet.
-3. Advance normalized progress toward selected goals.
-4. Prefer useful resources and fewer turns among otherwise equivalent plans.
+1. Minimize the bound on premature endings below the selected goals.
+2. Maximize the lower bound on reaching **both** selected goals.
+3. Maximize normalized frontier progress, with Goal Priority Bias applied only to its secondary average-progress term.
+4. Prefer fewer expected turns, then greater resource reserve.
 
-If either policy has an unresolved frontier, the ordering is conservative: avoid known premature-ending risk first, then compare certified goal probability and progress. An unresolved continuation with no known ending risk can therefore outrank a partly successful gamble. This is a cautious budget-limited choice, not proof that the unresolved continuation is feasible or globally optimal. Exact self-loops and dominated inert restorations must not exploit that preference.
+For fully resolved policies with exact probabilities, goal and premature-ending probabilities are complements, so the first two criteria agree. With unresolved outcomes or hidden PRD probabilities, the fields are conservative bounds. The ordering never switches depending on which two policies are compared. An unresolved continuation with no known ending risk can outrank a partly successful gamble; this is not proof that the continuation is feasible or globally optimal. The scoped inert-recovery guard prevents proven resource-wasting restore loops from exploiting that preference.
 
 This is not an unbounded global optimality claim. Time, node and horizon budgets limit planning. An unexpanded future or truncated action distribution contributes unresolved probability, not free success. Exact per-call state caching does not reuse stale scored entries across changed goals or runtime context.
 
@@ -104,7 +104,7 @@ Technique success, critical rolls and supported chance-conditioned effects are a
 
 The visible three-condition forecast is used where known. Future queue entries retain their generation-time harmony and dependencies, but branch only when consumed; observed entries are substituted into dependent rolls. This avoids expanding invisible condition combinations prematurely without changing their probabilities. All resulting condition probabilities are retained.
 
-The installed 0.7.18 success model uses a persistent failure streak. When a recorded success establishes the current streak, the planner uses the actual calibrated PRD coefficient. Unknown carry-over streaks use robust outcome bounds, not guessed probabilities. Critical chains use the live overcrit stat. The native RNG helper is never invoked to estimate an average.
+The installed 0.7.18 success model uses a persistent failure streak. When a recorded success establishes the current streak, the planner uses the actual calibrated PRD coefficient. Unknown carry-over streaks use robust outcome bounds, not guessed probabilities. If their enumeration omits any outcomes, those outcomes contribute a zero goal lower bound and unit risk/unknown bounds; nominal enumeration weights cannot establish a positive probability guarantee. The `probabilityUncertain` flag propagates through every selected continuation, including deterministic ancestors and worker transport. Exact success percentages are published only when both omitted/horizon uncertainty and hidden-probability uncertainty are absent. Critical chains use the live overcrit stat. The native RNG helper is never invoked to estimate an average.
 
 ### Stability and resource budgeting
 
@@ -132,6 +132,6 @@ Focused coverage includes `planningGoals.test.ts`, `outcome.test.ts`, `auditSear
 
 ## PR #4 review validation
 
-See [the review report](PR4_REVIEW_VALIDATION.md) for the 26 findings, scoped runtime evidence, regression coverage and current validation results. Native pre-use branches supply the cost and tooltip-preview input states. Stability gains exclude payment and turn decay; expected progress retains triggered buffs and harmony from the action transitions. Display values are estimates, not policy certificates. Unknown immediate transitions remain undispatchable; budget exhaustion and unsupported outcomes have explicit pause diagnostics, including across worker merges.
+See [the review report](PR4_REVIEW_VALIDATION.md) for the initial 26 Cubic findings and two Revera findings, subsequent review rounds, scoped runtime evidence, regression coverage and current validation results. Native pre-use branches supply the cost and tooltip-preview input states. Stability gains exclude payment and turn decay; expected progress retains triggered buffs and harmony from the action transitions. Display values are estimates, not policy certificates. Unknown immediate transitions remain undispatchable; budget exhaustion and unsupported outcomes have explicit pause diagnostics, including across worker merges.
 
 Goal Priority Bias weights only the secondary average-progress term, after the joint minimum progress and the failure/goal-probability checks. A conservative dominance check rejects simple full-bar recovery only when every immediate outcome proves no modeled benefit; dynamic expressions, useful cooldown waits, buffs, native item hooks and condition/harmony changes prevent that proof.

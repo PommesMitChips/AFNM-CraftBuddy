@@ -386,7 +386,20 @@ export function mergePartitionedResults(
     outcomeProjection: referencePartial?.outcomeProjection,
     blockedReasons: anyCandidates
       ? undefined
-      : partials.flatMap((partial) => partial.blockedReasons ?? []),
+      : Array.from(
+          new Map(
+            partials
+              .flatMap((partial) => partial.blockedReasons ?? [])
+              .map((reason) => [
+                JSON.stringify([
+                  reason.reason,
+                  reason.skillName,
+                  reason.details,
+                ]),
+                reason,
+              ]),
+          ).values(),
+        ),
     optimalRotation: referencePartial?.optimalRotation,
     optimalRotationLabels: referencePartial?.optimalRotationLabels,
     expectedFinalState: referencePartial?.expectedFinalState,

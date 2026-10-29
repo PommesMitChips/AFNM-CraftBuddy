@@ -15,7 +15,7 @@ related_files:
 
 # PR #4 review follow-up
 
-The 26 Cubic findings and two later Revera findings were checked against source and the installed **0.7.18-97c093b** runtime. Five native-selector claims are contradicted by that runtime. The other findings led to fixes, documentation corrections, or explicit pause diagnostics. Review comment IDs below identify the original threads on [PR #4](https://github.com/lemon07r/AFNM-CraftBuddy/pull/4).
+The first round covered 26 Cubic findings and two Revera findings. Five native-selector claims in that round were contradicted by the installed **0.7.18-97c093b** runtime; the other findings led to fixes, documentation corrections, or explicit pause diagnostics. A second round covered six further Cubic findings and three Revera findings, documented below. Review comment IDs below identify the original threads on [PR #4](https://github.com/lemon07r/AFNM-CraftBuddy/pull/4).
 
 ## Safety policy retained
 
@@ -65,9 +65,9 @@ Revera completed with a neutral/partial result and two additional findings. Its 
 
 The proposed PR version is now **6.9.0** in package metadata, README and the browser harness; this does not rename or replace the already-installed local UAT artifact.
 
-## Validation
+## First-round validation (dbfb996)
 
-Final results on the PR branch, 2026-10-29:
+Results on the PR branch at commit `dbfb996`, 2026-10-29:
 
 - Full Jest run: **49 suites / 1,088 tests passed** (one complete green run after both Revera fixes). The new review suite contains 31 cases, including native PRD inert-recovery coverage. Earlier red runs reproduced the valid findings and caught a triggered-progress preview regression, which was fixed before this final run.
 - Strict TypeScript check passed as part of the final production build.
@@ -79,3 +79,31 @@ Final results on the PR branch, 2026-10-29:
 - Additional legacy-only benchmark (`lookaheadSearch`, `legacy_fast`): **12 contracts passed, 3 failed, 1 fixture has no contract**, identically on the reviewed commit and this revision. Failures are the old exact-pick contracts for `forge-heat-runway-step-2`, `forge-heat-runway-step-3`, and `user-report-overcraft-endgame`. This historical reference benchmark is not production-planner certification; no constant or contract was changed to hide those failures.
 
 Runtime evidence is scoped to the selector, rule schema, resistance fold, item budget, and termination behavior described in [Runtime Evidence §19](RUNTIME_EVIDENCE.md#19-pr-4-native-selector-verification-0718). Live visual/gameplay validation was not repeated. The installed UAT build has not been replaced by this review follow-up.
+
+## Second review round (reviewed head dbfb996)
+
+Eight findings were addressed; the harmony-index suggestion was rejected using fresh installed-runtime evidence. Probability certificates now account for omitted outcomes even when PRD probabilities are hidden, and hidden probability uncertainty propagates through deterministic ancestors and worker transport. The immediate-outcome execution veto and the transitive policy comparator are unchanged. The package remains **6.9.0**.
+
+| Review comment | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 4412593381 | Recovery documentation too broad | Mechanics Parity now distinguishes provably inert full-bar recovery from useful cooldown waits or buff-granting recovery. |
+| 4412593395 | Duplicate worker diagnostics | Merge deduplicates the tuple of reason, skill name and details, preserving distinct explanations. Regression combines repeated empty partitions plus distinct details/reasons. |
+| 4412593401 | Zero-budget comment stale | Corrected the comment: an absent pill budget defaults to one; explicit zero remains valid. No behavior change. |
+| 4412593408 | Review scope undercounted | Optimizer Design names the initial 26 Cubic and two Revera findings and links subsequent rounds, instead of treating 26 as the complete scope. |
+| 4412593418 | Contradictory ordering documentation | Aligned Optimizer Design and the skill with the implementation's single lexicographic order: premature-ending bound, goal lower bound, frontier progress, expected turns, resource reserve. Exact fully resolved probabilities are complementary; unresolved/hidden-probability policies retain conservative bounds. The comparator itself is unchanged. |
+| 4412593430 | Inert diagnostics leak across partitions | Inert root diagnostics are recorded only when the skill belongs to rootSkillKeys (or no partition filter exists). Regression checks owning and non-owning partitions. |
+| 4412704622 | Native harmony rule list has seven entries | Disagree. The freshly checked installed 0.7.18 bundle has a seven-entry Wmo rule whitelist even though gameplay has nine harmonies. rho compiles an absent index to expression 0, including for !=. Expanding to HARMONY_TYPES would predict consumption the game skips. Named/documented the native whitelist and added invalid-index and valid equality/inequality tests across all nine playable harmonies. Runtime Evidence §19 records the exact distinction. |
+| 4412704642 | Truncated hidden-PRD branch can certify success | Fixed conservatively: any omitted hidden-probability outcome contributes zero to the goal lower bound and unit risk/unknown bounds. We do not multiply by nominal enumeration mass, because those weights are not calibrated probabilities when the prior PRD streak is hidden. A deterministic setup plus a 128-outcome failure subtree reproduces the false certificate; a larger enumeration exposes a missed failing outcome. The bounded planner now refuses certification and still blocks dispatch of the incomplete follow-up. |
+| 4412704664 | Descendant hidden PRD displayed as exact percentage | Added policy-level probabilityUncertain metadata, OR-ed through every backup and preserved by JSON/worker merge. Success percentages require both complete coverage and no hidden probability anywhere in the selected continuation. Regression distinguishes a hidden-streak descendant from a known calibrated streak. |
+
+### Second-round validation
+
+Final results for the second round, 2026-10-29:
+
+- **50 Jest suites / 1,098 tests passed** in one complete run after the fixes. The 10 new review cases cover omitted hidden-PRD outcomes, descendant uncertainty, exact known-streak probabilities, worker diagnostics and native harmony rule indices.
+- Strict TypeScript and production build passed at **6.9.0**, with the three existing webpack size warnings. The compiled worker passed the guaranteed-vs-fatal smoke and both new probability-certificate checks: no false guarantee from omitted hidden-PRD outcomes and no exact percentage from a hidden-streak descendant.
+- Seven fixed-budget production replay recommendations remained unchanged versus reviewed head `dbfb996`. The new hostile regressions specifically exercise the corrected probability paths absent from those replay samples.
+- Fresh installed-runtime verification confirmed **0.7.18-97c093b** and the same Game.js hash recorded in Runtime Evidence §19. Native Wmo remains seven entries; the gameplay registry has nine. Valid equality/inequality cases and absent indices are covered separately.
+- Documentation inventory, link, freshness and authority checks passed. Rust source and its corpus were unchanged in this round; the first-round Rust and historical benchmark results above remain separately scoped evidence.
+
+The immediate-outcome execution gate was retained. No live gameplay/visual validation or installed-mod replacement was performed in this round.

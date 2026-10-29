@@ -36,6 +36,8 @@ export interface PlanningValue {
   resourceReserve: number;
   expectedSteps: number;
   unresolvedProbability: number;
+  /** A policy contains hidden PRD probabilities; bounds are not exact chances. */
+  probabilityUncertain?: boolean;
   transitionUnresolvedProbability?: number;
 }
 
@@ -203,22 +205,29 @@ export function constrainedSearch(
     unresolvedProbability: !reached(s) && !ended(s) ? 1 : 0,
   });
   const combine = (action: Action, values: PlanningValue[]): PlanningValue => {
+    const probabilityUncertain =
+      action.uncertain || values.some((value) => value.probabilityUncertain);
     if (action.uncertain && values.length) {
+      // Enumeration weights are not true probabilities for a hidden PRD streak.
+      // An omitted outcome may be the worst case: include a zero goal bound and
+      // unit risk/unknown bound instead of scaling by nominal explored mass.
+      const omitted = action.unresolved > 0;
       return {
-        goalProbabilityLowerBound: Math.min(
-          ...values.map((v) => v.goalProbabilityLowerBound),
-        ),
+        goalProbabilityLowerBound: omitted
+          ? 0
+          : Math.min(...values.map((v) => v.goalProbabilityLowerBound)),
         prematureEndProbability: Math.max(
-          action.unresolved,
+          omitted ? 1 : 0,
           ...values.map((v) => v.prematureEndProbability),
         ),
         frontierProgress: Math.min(...values.map((v) => v.frontierProgress)),
         resourceReserve: Math.min(...values.map((v) => v.resourceReserve)),
         expectedSteps: 1 + Math.max(...values.map((v) => v.expectedSteps)),
         unresolvedProbability: Math.max(
-          action.unresolved,
+          omitted ? 1 : 0,
           ...values.map((v) => v.unresolvedProbability),
         ),
+        probabilityUncertain: true,
       };
     }
     const value: PlanningValue = {
@@ -228,6 +237,7 @@ export function constrainedSearch(
       resourceReserve: 0,
       expectedSteps: 1,
       unresolvedProbability: action.unresolved,
+      probabilityUncertain: probabilityUncertain || undefined,
     };
     action.children.forEach((child, i) => {
       const p = child.probability,
@@ -459,7 +469,12 @@ export function constrainedSearch(
       if (!action.children.length && action.unresolved === 0) continue;
       if (isInertRecovery(node, action)) {
         pruned++;
-        if (node.state === state) inertRootActions.push(skill);
+        if (
+          node.state === state &&
+          (!settings.rootSkillKeys ||
+            settings.rootSkillKeys.includes(skill.key))
+        )
+          inertRootActions.push(skill);
         continue;
       }
       action.immediate = combine(
@@ -668,7 +683,7 @@ export function constrainedSearch(
       endsCraft: a.unresolved === 0 && a.children.every((c) => ended(c.state)),
       // A horizon lower bound of zero means unproved, not a 0%-success craft.
       projectedSuccessChance:
-        p.value.unresolvedProbability <= 1e-10 && !a.uncertain
+        p.value.unresolvedProbability <= 1e-10 && !p.value.probabilityUncertain
           ? p.value.goalProbabilityLowerBound
           : undefined,
     };

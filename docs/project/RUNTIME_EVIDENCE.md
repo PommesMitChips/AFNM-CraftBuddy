@@ -1544,3 +1544,21 @@ stable across releases):
 The disputes and fixes are backed by `prReviewRegressions.test.ts` and
 `nativeAutoUsePlan.test.ts`. These are scoped observations, not an exhaustive
 claim of parity for every crafting mechanic.
+
+
+### Native harmony rule indices, rechecked during review round 2
+
+The same installed 0.7.18 artifact/hash was rechecked on 2026-10-29. Its
+`Wmo` array still contains only forge, alchemical, inscription, resonance,
+formless, enhancingEcho and eccentricDecree, in that order. This is the native
+rule selector's whitelist, distinct from the nine playable harmony types in
+`harmonyRegistry.ts`. In `rho`, a Harmony Type index not present in `Wmo`
+returns expression `0` before interpreting the comparison operator. Thus
+indices 7/8 do not fire for either equality or inequality. A valid inequality
+such as `Harmony Type != forge` can still match Returning Cycle.
+
+Replacing the native seven-index whitelist with the general nine-entry gameplay
+registry would incorrectly predict item consumption. The whitelist is named and
+commented explicitly in `nativeAutoUsePlan.ts`; `prReviewRound2.test.ts`
+covers invalid indices for both comparisons and valid comparisons across all
+nine playable harmonies. Revisit this list when runtime evidence changes.

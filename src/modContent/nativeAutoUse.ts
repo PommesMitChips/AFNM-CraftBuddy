@@ -395,7 +395,7 @@ export function readNativeAutoUseStatus(
     active: true,
     slotCount: slots.length,
     coveredItemNames,
-    // The runtime defaults the aggregated stat to 1, never 0.
+    // An absent stat defaults to 1; explicit zero is a valid no-use budget.
     pillsPerRound: Math.max(0, Math.floor(readNumber(stats?.pillsPerRound, 1))),
     availableToxicity: maxToxicity - toxicity,
     // Definedness, not truthiness: a defined-but-false trainingMode still

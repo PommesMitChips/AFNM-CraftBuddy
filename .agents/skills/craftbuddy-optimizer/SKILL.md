@@ -34,9 +34,9 @@ Use this before touching recommendation behavior. `docs/project/OPTIMIZER_DESIGN
 ## Planning Rules
 
 - **Requested goals are conjunctive.** Ordinary tier success does not satisfy a higher goal; a lower request does not redefine the actual item tier.
-- Use one transitive lexicographic order: premature-ending risk, goal-probability lower bound, normalized frontier progress, expected turns, then resource reserve. In fully resolved policies goal and failure probabilities are complements. With unresolved frontiers this conservative order is not a feasibility proof. Prevent inert/dominated restore loops from exploiting it.
+- Use one transitive lexicographic order: premature-ending risk, goal-probability lower bound, normalized frontier progress, expected turns, then resource reserve. For fully resolved policies with exact probabilities, goal and failure probabilities are complements. Hidden PRD probabilities remain bounds and their uncertainty propagates through deterministic ancestors. With unresolved frontiers this conservative order is not a feasibility proof. Prevent inert/dominated restore loops from exploiting it.
 - Use discrete success, crit and supported effect-chance branches. Never apply nonlinear goal or terminal checks to an averaged state as proof of success.
-- Retain unresolved probability mass at bounded frontiers. Never renormalize explored branches into certainty or present unexpanded continuation as verified.
+- Retain unresolved probability mass at bounded frontiers. Never renormalize explored branches into certainty or present unexpanded continuation as verified. Hidden-PRD omitted outcomes contribute zero goal lower bound; nominal enumeration weights cannot prove positive probability. Do not publish a success percentage when any descendant has hidden-probability uncertainty.
 - Reuse authoritative payment, mastery, buff and harmony phases for planning and survival checks. Do not maintain a divergent handwritten survival simulator.
 - Full-bar restoration requires another real modeled benefit to justify its resource and turn cost.
 - Exact per-call cache identity covers every state field affecting future decisions. Do not use legacy cross-step scores for production planning.
@@ -63,7 +63,7 @@ Use this before touching recommendation behavior. `docs/project/OPTIMIZER_DESIGN
 | Search scoring/order/cache edge | `search.test.ts` |
 | Bands, tiers, auto-finish | `outcome.test.ts`, `outcomeProjection.test.ts` |
 | Requested goals and propagation | `planningGoals.test.ts`, goal/terminal cases in `auditSearch.test.ts` |
-| Stochastic decisions and constrained planning | `stochasticTransitions.test.ts`, `constrainedPlanner.test.ts`, `planningComparator.test.ts`, `nativeAutoUsePlan.test.ts`, `prReviewRegressions.test.ts` |
+| Stochastic decisions and constrained planning | `stochasticTransitions.test.ts`, `constrainedPlanner.test.ts`, `planningComparator.test.ts`, `nativeAutoUsePlan.test.ts`, `prReviewRegressions.test.ts`, `prReviewRound2.test.ts` |
 | Transition, buffs, masteries, action costs | `skills.test.ts` |
 | Formula or runtime parity | `gameAccuracy.test.ts`, `runtimeParity.test.ts` |
 | Harmony subsystem | `harmony.test.ts`, `harmonyRegistry.test.ts`, plus simulations |

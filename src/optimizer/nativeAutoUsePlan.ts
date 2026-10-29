@@ -41,7 +41,10 @@ const conditions = [
   'positive',
   'veryPositive',
 ];
-const harmonies = [
+// Native slot rule indices come from 0.7.18's Wmo whitelist, which still has
+// seven entries despite nine playable harmonies. Do not substitute the broader
+// HARMONY_TYPES registry: unknown indices compile to false even for != rules.
+const nativeRuleHarmonies = [
   'forge',
   'alchemical',
   'inscription',
@@ -113,9 +116,11 @@ function conditionMatches(
       value = state.harmony;
       break;
     case 'Harmony Type':
-      if (!harmonies[Number(condition.value)]) return false;
+      if (!nativeRuleHarmonies[Number(condition.value)]) return false;
       value =
-        harmonies[Number(condition.value)] === config.craftingType ? 1 : 0;
+        nativeRuleHarmonies[Number(condition.value)] === config.craftingType
+          ? 1
+          : 0;
       return compare(value, condition.check, 1);
     case 'Current Condition':
       if (!currentCondition) return undefined;
