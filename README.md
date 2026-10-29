@@ -20,7 +20,7 @@ This branch proposes a constrained stochastic planner for joint completion and p
 - Large-number-safe parsing and formatting for late-game values
 - Snapshot export for bug reports and replayable optimizer debugging
 
-Proposed build **6.9.0-local.1**, based on **6.8.0**. Runtime corrections were checked against installed AFNM **0.7.18-97c093b**; this is scoped verification, not an exhaustive parity claim for every mechanic.
+Proposed build **6.9.0**, based on **6.8.0**. Runtime corrections were checked against installed AFNM **0.7.18-97c093b**; this is scoped verification, not an exhaustive parity claim for every mechanic.
 
 ![CraftBuddy Workshop Preview](pictures/workshop_preview.png)
 
@@ -84,7 +84,7 @@ Depth, time, nodes, and beam width are coupled search-budget controls: pushing o
 
 ## Local Workshop Publish
 
-If the sibling uploader repo is available at `../ModUploader-AFNM`, you can publish the current build directly from this repo:
+Historical publishing example for upstream 6.8.0 (requires the sibling uploader repo at `../ModUploader-AFNM`). The Workshop description below still describes that released version; this proposed 6.9.0 PR has not been published to Workshop. Choose final release copy and a change note before a future upload:
 
 ```bash
 bun run workshop:upload -- --change-note "v6.8.0 - AFNM 0.7.17 compatibility and Returning Cycle support" --description-file docs/project/WORKSHOP_DESCRIPTION.md

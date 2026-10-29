@@ -95,9 +95,8 @@ function normalizeKey(value: unknown): string {
  * digest identically, whatever order the runtime happened to build them in.
  */
 export function serializeCanonicalValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return 'none';
-  }
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
   if (Array.isArray(value)) {
     return `[${value.map(serializeCanonicalValue).join(',')}]`;
   }
@@ -105,13 +104,16 @@ export function serializeCanonicalValue(value: unknown): string {
     const record = value as Record<string, unknown>;
     const entries = Object.keys(record)
       .sort()
-      .map((key) => `${key}=${serializeCanonicalValue(record[key])}`);
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${serializeCanonicalValue(record[key])}`,
+      );
     return `{${entries.join(',')}}`;
   }
   if (typeof value === 'number') {
-    return Number.isFinite(value) ? String(value) : 'nan';
+    return `number:${Object.is(value, -0) ? '-0' : String(value)}`;
   }
-  return String(value);
+  return `${typeof value}:${JSON.stringify(String(value))}`;
 }
 
 /**
@@ -449,7 +451,8 @@ export function readLiveCraftStateSignature(
       actionTracking: progressState.actionTracking,
       pillTracking: progressState.pillTracking,
       companion: definition(
-        readRecord(state.gameEvent)?.craftingTeamUpOverride,
+        readRecord(state.gameEvent)?.craftingTeamUpOverride ??
+          readRecord(readRecord(state.game)?.gameEvent)?.craftingTeamUpOverride,
       ),
     },
     nativeAutoUse: {

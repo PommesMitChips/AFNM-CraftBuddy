@@ -44,15 +44,21 @@ const workerConfig = {
     extensions: ['.tsx', '.ts', '.js'],
   },
   output: {
+    clean: { keep: /^\.gitignore$/ },
     filename: 'searchWorker.js',
     path: path.resolve(__dirname, 'src/worker/generated'),
   },
   plugins: [
     // The constrained planner owns production decisions. The optional legacy
-    // MCTS artifact remains a developer-only reference, not a build prerequisite.
-    new webpack.IgnorePlugin({
-      resourceRegExp: /craftbuddy_engine_inline\.js$/,
-    }),
+    // MCTS artifact is optional for production; developer reference bundles
+    // include it when generated with wasm:build.
+    ...(isProduction
+      ? [
+          new webpack.IgnorePlugin({
+            resourceRegExp: /craftbuddy_engine_inline\.js$/,
+          }),
+        ]
+      : []),
     new webpack.DefinePlugin({
       MOD_METADATA: JSON.stringify({
         name: package.name,
@@ -108,6 +114,7 @@ module.exports = {
     extensions: ['.tsx', '.ts', '.js'],
   },
   output: {
+    clean: true,
     filename: 'mod.js',
     path: path.resolve(__dirname, `dist/${package.name}`),
     library: {
@@ -119,9 +126,13 @@ module.exports = {
     publicPath: 'mod://',
   },
   plugins: [
-    new webpack.IgnorePlugin({
-      resourceRegExp: /craftbuddy_engine_inline\.js$/,
-    }),
+    ...(isProduction
+      ? [
+          new webpack.IgnorePlugin({
+            resourceRegExp: /craftbuddy_engine_inline\.js$/,
+          }),
+        ]
+      : []),
     new webpack.DefinePlugin({
       MOD_METADATA: JSON.stringify({
         name: package.name,

@@ -5,7 +5,7 @@ authoritative: true
 owner: craftbuddy-maintainers
 game_version: 0.7.17-d8ae6ce
 last_verified: 2026-10-29
-source_of_truth: src/optimizer/outcome.ts, src/optimizer/search.ts, src/optimizer/skills.ts, src/optimizer/stochastic.ts, src/optimizer/state.ts, src/optimizer/index.ts
+source_of_truth: src/optimizer/outcome.ts, src/optimizer/search.ts, src/optimizer/constrainedPlanner.ts, src/optimizer/searchBackend.ts, src/optimizer/skills.ts, src/optimizer/stochastic.ts, src/optimizer/state.ts, src/optimizer/index.ts
 review_cycle_days: 30
 related_files:
   - AGENTS.md
@@ -94,12 +94,7 @@ For two fully resolved policies, decision priorities are lexicographic:
 3. Advance normalized progress toward selected goals.
 4. Prefer useful resources and fewer turns among otherwise equivalent plans.
 
-If either policy has an unresolved frontier, the ordering is conservative:
-avoid known premature-ending risk first, then compare certified goal probability
-and progress. An unresolved continuation with no known ending risk can therefore
-outrank a partly successful gamble. This is a cautious budget-limited choice,
-not proof that the unresolved continuation is feasible or globally optimal.
-Exact self-loops and dominated inert restorations must not exploit that preference.
+If either policy has an unresolved frontier, the ordering is conservative: avoid known premature-ending risk first, then compare certified goal probability and progress. An unresolved continuation with no known ending risk can therefore outrank a partly successful gamble. This is a cautious budget-limited choice, not proof that the unresolved continuation is feasible or globally optimal. Exact self-loops and dominated inert restorations must not exploit that preference.
 
 This is not an unbounded global optimality claim. Time, node and horizon budgets limit planning. An unexpanded future or truncated action distribution contributes unresolved probability, not free success. Exact per-call state caching does not reuse stale scored entries across changed goals or runtime context.
 
@@ -134,3 +129,9 @@ The Rust/WASM engine and historical differential corpus remain evidence for the 
 Use fixed node/horizon budgets and deterministic fixtures to test decisions. Wall-clock truncation is machine-dependent; larger search settings cannot repair incorrect transitions or objectives. Report resolved and unresolved coverage separately. Not every requested goal is achievable.
 
 Focused coverage includes `planningGoals.test.ts`, `outcome.test.ts`, `auditSearch.test.ts`, stochastic transition tests and execution tests. Run the full TypeScript suite and production build before shipping. Label Rust/replay benchmarks historical or reference until validated under the new objective. Never change a constant merely to reproduce an old pick.
+
+## PR #4 review validation
+
+See [the review report](PR4_REVIEW_VALIDATION.md) for the 26 findings, scoped runtime evidence, regression coverage and current validation results. Native pre-use branches supply the cost and tooltip-preview input states. Stability gains exclude payment and turn decay; expected progress retains triggered buffs and harmony from the action transitions. Display values are estimates, not policy certificates. Unknown immediate transitions remain undispatchable; budget exhaustion and unsupported outcomes have explicit pause diagnostics, including across worker merges.
+
+Goal Priority Bias weights only the secondary average-progress term, after the joint minimum progress and the failure/goal-probability checks. A conservative dominance check rejects simple full-bar recovery only when every immediate outcome proves no modeled benefit; dynamic expressions, useful cooldown waits, buffs, native item hooks and condition/harmony changes prevent that proof.

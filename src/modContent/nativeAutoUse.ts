@@ -396,7 +396,7 @@ export function readNativeAutoUseStatus(
     slotCount: slots.length,
     coveredItemNames,
     // The runtime defaults the aggregated stat to 1, never 0.
-    pillsPerRound: Math.max(1, Math.floor(readNumber(stats?.pillsPerRound, 1))),
+    pillsPerRound: Math.max(0, Math.floor(readNumber(stats?.pillsPerRound, 1))),
     availableToxicity: maxToxicity - toxicity,
     // Definedness, not truthiness: a defined-but-false trainingMode still
     // suppresses inventory removal.

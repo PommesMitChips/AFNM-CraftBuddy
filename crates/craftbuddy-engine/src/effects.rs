@@ -1390,7 +1390,7 @@ pub fn build_technique_scaling_base(
     variables.insert("maxtoxicity".to_string(), state.max_toxicity);
     variables.insert("resistance".to_string(), 0.0);
     variables.insert("itemEffectiveness".to_string(), state.item_effectiveness);
-    variables.insert("pillsPerRound".to_string(), config.pills_per_round.max(1.0));
+    variables.insert("pillsPerRound".to_string(), config.pills_per_round.max(0.0));
     variables.insert(
         "poolCostFlat".to_string(),
         state.pool_cost_flat.floor().max(0.0),
@@ -3055,7 +3055,7 @@ pub fn can_apply_skill(
         if skill.reagent_only_at_step_zero && state.step != 0 {
             return false;
         }
-        let per_turn_limit = env.config.pills_per_round.floor().max(1.0);
+        let per_turn_limit = env.config.pills_per_round.floor().max(0.0);
         if (state.consumed_pills_this_turn as f64) >= per_turn_limit {
             return false;
         }

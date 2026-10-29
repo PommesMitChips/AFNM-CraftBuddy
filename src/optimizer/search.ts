@@ -136,7 +136,15 @@ export interface SetupForHint {
 /** Diagnostic info for why skills are unavailable */
 export interface SkillBlockedReason {
   skillName: string;
-  reason: 'cooldown' | 'qi' | 'stability' | 'toxicity' | 'condition';
+  reason:
+    | 'cooldown'
+    | 'qi'
+    | 'stability'
+    | 'toxicity'
+    | 'condition'
+    | 'unresolved'
+    | 'dominated'
+    | 'budget';
   details: string;
 }
 
@@ -3097,7 +3105,7 @@ function buildGoalUnlockScalingVariables(
     maxtoxicity: state.maxToxicity,
     resistance: 0,
     itemEffectiveness: state.itemEffectiveness,
-    pillsPerRound: config.pillsPerRound || 1,
+    pillsPerRound: config.pillsPerRound ?? 1,
     poolCostFlat: 0,
     poolCostPercentage: 0,
     stabilityCostPercentage: 0,

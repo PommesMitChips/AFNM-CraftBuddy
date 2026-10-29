@@ -52,6 +52,8 @@ describe('execution audit regressions', () => {
     const store = { getState: () => live };
     const before = readLiveCraftStateSignature(store);
     live.crafting.player.stats.stabilityCostPenalty = 100;
+    expect(readLiveCraftStateSignature(store)).not.toEqual(before);
+    live.crafting.player.stats.stabilityCostPenalty = 0;
     live.crafting.player.stats.qiDroplets = 0;
     expect(readLiveCraftStateSignature(store)).not.toEqual(before);
   });

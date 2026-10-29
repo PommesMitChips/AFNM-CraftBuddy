@@ -2122,6 +2122,21 @@ const BlockedReasonsSection = memo(function BlockedReasonsSection({
     string,
     { icon: React.ReactNode; color: string; label: string }
   > = {
+    unresolved: {
+      icon: <ShieldIcon sx={{ fontSize: 14 }} />,
+      color: colors.stability,
+      label: 'Safety check incomplete',
+    },
+    dominated: {
+      icon: <ShieldIcon sx={{ fontSize: 14 }} />,
+      color: colors.stability,
+      label: 'No useful recovery',
+    },
+    budget: {
+      icon: <TimerIcon sx={{ fontSize: 14 }} />,
+      color: colors.textSecondary,
+      label: 'Search budget exhausted',
+    },
     qi: {
       icon: <WaterDropIcon sx={{ fontSize: 14 }} />,
       color: colors.perfection,
@@ -2838,20 +2853,20 @@ export function RecommendationPanel({
           />
 
           {/* Optimal rotation preview */}
-          {showOptimalRotation && (result.optimalRotationLabels ??
-            result.optimalRotation) && (
-            <RotationSection
-              rotation={
-                result.optimalRotationLabels ?? result.optimalRotation ?? []
-              }
-              maxDisplay={
-                compactMode
-                  ? Math.min(maxRotationDisplay, 4)
-                  : maxRotationDisplay
-              }
-              compact={compactMode}
-            />
-          )}
+          {showOptimalRotation &&
+            (result.optimalRotationLabels ?? result.optimalRotation) && (
+              <RotationSection
+                rotation={
+                  result.optimalRotationLabels ?? result.optimalRotation ?? []
+                }
+                maxDisplay={
+                  compactMode
+                    ? Math.min(maxRotationDisplay, 4)
+                    : maxRotationDisplay
+                }
+                compact={compactMode}
+              />
+            )}
 
           {/* Expected final state */}
           {showExpectedFinalState && result.expectedFinalState && (

@@ -38,7 +38,6 @@ describe('audit: safety floor must agree with deterministic transition', () => {
     });
     const actual = applySkill(state, skill, config)!;
     const floor = calculateActionSurvivabilityFloor(state, skill, config)!;
-    console.log('CONSUMED_DISCOUNT', { actual: actual.stability, floor });
     expect(actual.stability).toBe(0);
     expect(floor.stability).toBeLessThanOrEqual(actual.stability);
   });
@@ -58,7 +57,6 @@ describe('audit: safety floor must agree with deterministic transition', () => {
     const state = new CraftingState({ qi: 100, stability: 6 });
     const actual = applySkill(state, skill, config)!;
     const floor = calculateActionSurvivabilityFloor(state, skill, config)!;
-    console.log('MASTERY_RESTORE', { actual: actual.stability, floor });
     expect(actual.stability).toBe(16);
     expect(floor.stability).toBe(actual.stability);
   });
@@ -74,7 +72,6 @@ describe('audit: safety floor must agree with deterministic transition', () => {
       scenario.skill,
       scenario.config,
     )!;
-    console.log('FAIRY_DISCOUNT', { actual: actual.stability, floor });
     expect(actual.stability).toBeGreaterThan(0);
     expect(floor.stability).toBe(actual.stability);
   });

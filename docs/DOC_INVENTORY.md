@@ -18,13 +18,13 @@ Generated on: 2026-10-29
 
 | Category | Count |
 |---|---|
-| project | 25 |
+| project | 26 |
 | dev-request | 2 |
 | project-meta | 1 |
 | history | 0 |
 | reference | 20 |
 | root-or-other | 15 |
-| total | 63 |
+| total | 64 |
 
 ## Authoritative Docs
 
@@ -41,6 +41,7 @@ Generated on: 2026-10-29
 | `docs/project/OPTIMIZER_DESIGN.md` | project | active | true | craftbuddy-maintainers | keep-authoritative |
 | `docs/project/OPTIMIZER_ENGINE_FINDINGS.md` | project | active | true | craftbuddy-maintainers | keep-authoritative |
 | `docs/project/OPTIMIZER_NEXT_STEPS_HANDOFF.md` | project | active | true | craftbuddy-maintainers | keep-authoritative |
+| `docs/project/PR4_REVIEW_VALIDATION.md` | project | active | true | craftbuddy-maintainers | keep-authoritative |
 | `docs/project/RELEASE_NOTES_6.0.0.md` | project | active | true | craftbuddy-maintainers | keep-authoritative |
 | `docs/project/RELEASE_NOTES_6.1.0.md` | project | active | true | craftbuddy-maintainers | keep-authoritative |
 | `docs/project/RELEASE_NOTES_6.2.0.md` | project | active | true | craftbuddy-maintainers | keep-authoritative |

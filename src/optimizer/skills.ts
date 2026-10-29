@@ -1135,7 +1135,7 @@ function buildNativeAvailabilityVariables(
     maxtoxicity: derivedMaxToxicity,
     consumedPills: state.consumedPillsThisTurn,
     consumedPillsThisTurn: state.consumedPillsThisTurn,
-    pillsPerRound: Math.max(1, Math.floor(pillsPerRound || 1)),
+    pillsPerRound: Math.max(0, Math.floor(pillsPerRound ?? 1)),
     step: state.step,
   };
 
@@ -1220,7 +1220,7 @@ function propagateNativeVariablesAfterAction(
   variables.toxicity = nextState.toxicity;
   variables.consumedPills = nextState.consumedPillsThisTurn;
   variables.consumedPillsThisTurn = nextState.consumedPillsThisTurn;
-  variables.pillsPerRound = Math.max(1, Math.floor(pillsPerRound || 1));
+  variables.pillsPerRound = Math.max(0, Math.floor(pillsPerRound ?? 1));
   variables.step = nextState.step;
   variables.maxtoxicity =
     maxToxicity > 0 ? maxToxicity : Math.max(1, state.maxToxicity);
@@ -1366,7 +1366,7 @@ function buildTechniqueScalingBase(
     maxtoxicity: state.maxToxicity,
     resistance: config.nativeAutoUsePlan?.baseResistance ?? 0,
     itemEffectiveness: state.itemEffectiveness,
-    pillsPerRound: config.pillsPerRound || 1,
+    pillsPerRound: config.pillsPerRound ?? 1,
     poolCostFlat: Math.max(0, Math.floor(state.poolCostFlat)),
     poolCostPercentage: normalizeRuntimeCostPercentage(
       state.poolCostPercentage,
@@ -2958,7 +2958,7 @@ export function canApplySkill(
       return false;
     }
 
-    const perTurnLimit = Math.max(1, Math.floor(pillsPerRound || 1));
+    const perTurnLimit = Math.max(0, Math.floor(pillsPerRound ?? 1));
     if (state.consumedPillsThisTurn >= perTurnLimit) {
       return false;
     }
@@ -3476,7 +3476,7 @@ export function applySkill(
       config.maxToxicity || 0,
       currentCondition,
       conditionEffects,
-      config.pillsPerRound || 1,
+      config.pillsPerRound ?? 1,
       config,
     )
   )
@@ -3487,7 +3487,8 @@ export function applySkill(
       ...skill,
       masteryEntries: skill.masteryEntries.map((entry, index) => {
         const condition = entry.condition as
-          CraftingTechniqueCondition | undefined;
+          | CraftingTechniqueCondition
+          | undefined;
         return condition?.kind === 'chance'
           ? {
               ...entry,
@@ -4625,7 +4626,7 @@ function applySkillTransition(
         newBuffs,
         newHarmonyData,
         maxToxicity,
-        config.pillsPerRound || 1,
+        config.pillsPerRound ?? 1,
       );
 
   return state.copy({
@@ -4681,7 +4682,7 @@ export function getAvailableSkills(
       maxToxicity,
       normalizedCondition,
       conditionEffects,
-      config.pillsPerRound || 1,
+      config.pillsPerRound ?? 1,
       config,
     ),
   );
@@ -4803,7 +4804,7 @@ export function getBlockedSkillReasons(
         continue;
       }
 
-      const perTurnLimit = Math.max(1, Math.floor(config.pillsPerRound || 1));
+      const perTurnLimit = Math.max(0, Math.floor(config.pillsPerRound ?? 1));
       if (state.consumedPillsThisTurn >= perTurnLimit) {
         reasons.push({
           skillName: skill.name,
@@ -4861,7 +4862,7 @@ export function getBlockedSkillReasons(
         conditionEffects,
         maxToxicity,
         minStability: config.minStability,
-        pillsPerRound: config.pillsPerRound || 1,
+        pillsPerRound: config.pillsPerRound ?? 1,
         effectiveQiCost: effectiveCosts.qiCost,
       });
       if (nativeCanUse === false) {

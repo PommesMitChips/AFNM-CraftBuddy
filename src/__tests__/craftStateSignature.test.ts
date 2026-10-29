@@ -127,7 +127,7 @@ describe('serializeHarmonyData', () => {
   });
 
   it('distinguishes absent from empty harmony data', () => {
-    expect(serializeHarmonyData(undefined)).toBe('none');
+    expect(serializeHarmonyData(undefined)).toBe('null');
     expect(serializeHarmonyData({})).toBe('{}');
   });
 

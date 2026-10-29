@@ -329,11 +329,15 @@ export function buildOutcomeBands(params: OutcomeBandParams): OutcomeBands {
   const perfectionCap = params.maxPerfectionCap;
 
   const completionFinishFlat =
-    completionCap !== undefined && completionCap > 0
+    completionCap !== undefined &&
+    Number.isFinite(completionCap) &&
+    completionCap >= 0
       ? completionCap
       : derivedCompletionFlat;
   const perfectionFinishFlat =
-    perfectionCap !== undefined && perfectionCap > 0
+    perfectionCap !== undefined &&
+    Number.isFinite(perfectionCap) &&
+    perfectionCap >= 0
       ? perfectionCap
       : derivedPerfectionFlat;
 

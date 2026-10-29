@@ -45,16 +45,17 @@ bun run runtime:extract                     # unpacks app.asar into tmp/installe
 bun run runtime:grep -- "<pattern>"         # searches the extracted bundle
 ```
 
-`runtime:oracle` reports `gameVersion: 0.7.10-9bf9078`, extracted to
+**Historical 0.7.10 coordinates:** the earlier `runtime:oracle` run reported
+`gameVersion: 0.7.10-9bf9078`, extracted to
 `tmp/installed-game-runtime/1182767661-1788139699386/`. The 0.7.6 findings below
 were produced by diffing the 0.7.6 build (`1172405719-1785155522026/`) against
 `0.7.5-d764178` (`1170135731-1784964316349/`); the 0.7.7/0.7.8 findings
 (section 14) were verified against the 0.7.8 build (`1168651333-1786309913280/`),
 the 0.7.9 findings (section 15) diff that 0.7.8 build against the 0.7.9 build
 (`1172235715-1787523522327/`), and the 0.7.10 findings (section 16) diff that
-0.7.9 build against the current extraction.
+0.7.9 build against that historical 0.7.10 extraction.
 
-The two crafting-relevant chunks are `dist-electron/Game.js` (~4.5 MB) and
+For those historical builds, the two crafting-relevant chunks were `dist-electron/Game.js` (~4.5 MB) and
 `dist-electron/_rolldown_dynamic_import_helper.js`, which grew from ~12.8 MB in
 0.7.5 to ~14.1 MB in 0.7.6. All crafting mechanics live in the helper chunk;
 `Game.js` holds the React layer. `tmp/` is not committed, so the snippets are
@@ -1500,3 +1501,46 @@ Additional static checks against the same 0.7.18 artifact:
 These checks are covered by `stochasticTransitions.test.ts`, the survival
 regressions, PRD extraction tests, and Rust stability-phase regressions. They
 remain scoped evidence, not an exhaustive audit of all 0.7.18 effects.
+
+
+## 19. PR #4 native-selector verification (0.7.18)
+
+Rechecked on 2026-10-29 using the installed ASAR, fingerprint
+`2905116188-1793133742679`. Set `AFNM_GAME_DIR` to the Steam game directory
+before running `runtime:oracle` or `runtime:extract`. The oracle reports
+`gameVersion: 0.7.18-97c093b`; its older minified buildVersion pattern returns
+null and is not used as version evidence. Nested ASAR lookups now use host path
+separators so Windows extraction includes `dist-electron/main/index.js`.
+Extraction lives in `tmp/installed-game-runtime/2905116188-1793133742679/`.
+
+The current crafting logic is in `dist-electron/Game.js`, SHA-256
+`cc6ca4a00d277d5ddf86262cbc786fba8f7b27c823d0c3b788aec8d7f4fb9b4e`.
+Search these build-specific symbols in the extracted source (names are not
+stable across releases):
+
+- `recipeConditionEffects:eu` exports `eu=[...]`, an ordered array of
+  condition definitions, not a keyed object. Array order defines rule indices.
+- `scu` accepts reagents or pills with `pillKind === 'crafting'`.
+  `ccu` calls this predicate before slot selection; accepting all pills would
+  diverge from the native hook.
+- `eR` normalizes blocks, legacy conditions with AND/OR, and single
+  condition rows. `iho` and `rho` compile `condition/check/value` fields.
+  They do not consume a `kind/comparison` rule schema.
+- `ccu` calls `hEl(fEl(item.effects), entity)` to skip items with an
+  already-active non-stacking createBuff effect. `fEl` extracts direct
+  createBuff definitions; `hEl` tests any matching positive stack count.
+  Stackable buffs at their cap and direct resource restoration are not part
+  of that native predicate. Adding broader satisfaction rules would mispredict
+  which items the game consumes.
+- `NF` / `vho` / `_ho` seed resistance from entity stats and add buff
+  stats. Condition-specific modifiers apply to control/intensity and cost
+  channels, not resistance. The simulator likewise seeds raw resistance,
+  folds buffs once through `getCraftingActionVariables`, and recalculates
+  payment between selected items. Passing already-aggregated resistance into
+  the raw base would double-count buffs.
+- `ccu` uses `floor(pillsPerRound) - consumedPills` and selects nothing
+  when this is zero or negative. Zero must not be converted into one.
+
+The disputes and fixes are backed by `prReviewRegressions.test.ts` and
+`nativeAutoUsePlan.test.ts`. These are scoped observations, not an exhaustive
+claim of parity for every crafting mechanic.

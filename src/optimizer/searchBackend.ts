@@ -132,8 +132,9 @@ type PlainCraftingState = {
     infer Value
   >
     ? Record<string, Value>
-    : | Exclude<CraftingStateData[K], undefined>
-      | (undefined extends CraftingStateData[K] ? null : never);
+    :
+        | Exclude<CraftingStateData[K], undefined>
+        | (undefined extends CraftingStateData[K] ? null : never);
 };
 
 export interface PlainSearchInput {
@@ -236,7 +237,8 @@ export function reviveSearchInput(plain: PlainSearchInput): SearchBackendInput {
     targetPerfection: plain.targetPerfection,
     lookaheadDepth: plain.lookaheadDepth,
     currentCondition: (plain.currentCondition ?? undefined) as
-      CraftingConditionType | undefined,
+      | CraftingConditionType
+      | undefined,
     forecast: plain.forecast as CraftingConditionType[],
     searchConfig: plain.searchConfig as Partial<SearchConfig>,
   };
@@ -384,7 +386,7 @@ export function mergePartitionedResults(
     outcomeProjection: referencePartial?.outcomeProjection,
     blockedReasons: anyCandidates
       ? undefined
-      : referencePartial?.blockedReasons,
+      : partials.flatMap((partial) => partial.blockedReasons ?? []),
     optimalRotation: referencePartial?.optimalRotation,
     optimalRotationLabels: referencePartial?.optimalRotationLabels,
     expectedFinalState: referencePartial?.expectedFinalState,

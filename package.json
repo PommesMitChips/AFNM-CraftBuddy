@@ -1,6 +1,6 @@
 {
   "name": "afnm-craftbuddy",
-  "version": "6.9.0-local.1",
+  "version": "6.9.0",
   "description": "Plans crafting toward selected completion and perfection goals using constrained stochastic search",
   "author": {
     "name": "lemon07r"

@@ -31,13 +31,10 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import {
   AMBITION_BAND_MAX,
   CraftBuddySettings,
-  EXPERIMENTAL_SEARCH_PRESET_BUDGETS,
   getSettings,
   LEGACY_SEARCH_PRESET_BUDGETS,
   saveSettings,
-  OPTIMIZER_ENGINE_OPTIONS,
   SEARCH_THREAD_OPTIONS,
-  type OptimizerEngine,
   type SearchPresetBudget,
   type SearchPresetId,
   type SearchThreadCount,
@@ -111,10 +108,7 @@ const SEARCH_PRESETS: SearchPreset[] = [
   },
 ];
 
-function getSearchPresetBudget(
-  presetId: SearchPresetId,
-  engine: OptimizerEngine,
-): SearchPresetBudget {
+function getSearchPresetBudget(presetId: SearchPresetId): SearchPresetBudget {
   return LEGACY_SEARCH_PRESET_BUDGETS[presetId];
 }
 
@@ -663,40 +657,17 @@ export const SettingsPanel = memo(function SettingsPanel({
     [settings, handleSettingChange, onSearchSettingsChange],
   );
 
-  const handleEngineChange = useCallback(
-    (engine: OptimizerEngine) => {
-      if (settings.optimizerEngine === engine) return;
-      const activePreset = SEARCH_PRESETS.find((preset) =>
-        matchesSearchPresetBudget(
-          settings,
-          getSearchPresetBudget(preset.id, settings.optimizerEngine),
-        ),
-      );
-      const newSettings = applySettingsPatch({
-        optimizerEngine: engine,
-        ...(activePreset ? getSearchPresetBudget(activePreset.id, engine) : {}),
-      });
-      onSearchSettingsChange?.(newSettings);
-    },
-    [settings, applySettingsPatch, onSearchSettingsChange],
-  );
-
   const handleApplyPreset = useCallback(
     (preset: SearchPreset) => {
-      const newSettings = applySettingsPatch(
-        getSearchPresetBudget(preset.id, settings.optimizerEngine),
-      );
+      const newSettings = applySettingsPatch(getSearchPresetBudget(preset.id));
       onSearchSettingsChange?.(newSettings);
     },
-    [settings.optimizerEngine, applySettingsPatch, onSearchSettingsChange],
+    [applySettingsPatch, onSearchSettingsChange],
   );
 
   const isPresetActive = useCallback(
     (preset: SearchPreset): boolean =>
-      matchesSearchPresetBudget(
-        settings,
-        getSearchPresetBudget(preset.id, settings.optimizerEngine),
-      ),
+      matchesSearchPresetBudget(settings, getSearchPresetBudget(preset.id)),
     [settings],
   );
 
@@ -1148,10 +1119,7 @@ export const SettingsPanel = memo(function SettingsPanel({
                   <FlexRow gap={0.65} sx={{ flexWrap: 'wrap' }}>
                     {SEARCH_PRESETS.map((preset) => {
                       const active = isPresetActive(preset);
-                      const values = getSearchPresetBudget(
-                        preset.id,
-                        settings.optimizerEngine,
-                      );
+                      const values = getSearchPresetBudget(preset.id);
                       return (
                         <Tooltip
                           key={preset.id}

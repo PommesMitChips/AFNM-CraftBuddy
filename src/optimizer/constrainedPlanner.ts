@@ -25,6 +25,8 @@ import type {
 } from './search';
 import { generatedConditions } from './conditionOutcomes';
 import { projectNativeAutoUseBranches } from './nativeAutoUsePlan';
+import { buildCanonicalNativeVariables } from './nativeVariables';
+import { clampSearchGoalPriorityBias } from '../utils/searchGoalPriority';
 
 export interface PlanningValue {
   goalProbabilityLowerBound: number;
@@ -78,6 +80,7 @@ interface Child extends NodeState {
 }
 interface Action {
   skill: SkillDefinition;
+  before: Array<{ state: CraftingState; probability: number }>;
   children: Child[];
   unresolved: number;
   uncertain?: boolean;
@@ -107,6 +110,32 @@ function stateKey(node: NodeState): string {
         );
       return value;
     },
+  );
+}
+
+/** Unknown expressions/callbacks prevent proving that waiting cannot help. */
+function hasDynamicRecoveryDependencies(
+  value: unknown,
+  seen = new Set<object>(),
+): boolean {
+  if (typeof value === 'function') return true;
+  if (!value || typeof value !== 'object' || seen.has(value)) return false;
+  seen.add(value);
+  return Object.entries(value).some(
+    ([key, child]) =>
+      ([
+        'eqn',
+        'scaling',
+        'stat',
+        'condition',
+        'conditionRequirement',
+        'firstActionOnly',
+        'additionalVariables',
+      ].includes(key) &&
+        child !== undefined &&
+        child !== null &&
+        child !== false) ||
+      hasDynamicRecoveryDependencies(child, seen),
   );
 }
 
@@ -141,6 +170,9 @@ export function constrainedSearch(
     pruned = 0;
   const memo = new Map<string, Policy>();
   const transitions = new Map<string, Action[]>();
+  const inertRootActions: SkillDefinition[] = [];
+  const goalBias =
+    clampSearchGoalPriorityBias(settings.goalPriorityBias ?? 0) / 100;
   const check = () => {
     if (
       nodes >= budget ||
@@ -154,7 +186,9 @@ export function constrainedSearch(
       goals.completion > 0 ? Math.min(1, s.completion / goals.completion) : 1;
     const p =
       goals.perfection > 0 ? Math.min(1, s.perfection / goals.perfection) : 1;
-    return (Math.min(c, p) + (c + p) / 2) / 2;
+    const average = (c + p) / 2;
+    // Bias changes only the secondary progress heuristic, never safety or goals.
+    return (Math.min(c, p) + average + (goalBias * (c - p)) / 2) / 2;
   };
   const reserve = (s: CraftingState) =>
     Math.max(0, s.qi) / Math.max(1, config.maxQi) +
@@ -214,6 +248,79 @@ export function constrainedSearch(
     config.conditionEffectType ||
     config.skills.some((s) => s.conditionRequirement),
   );
+  const canProveWaitingInert =
+    !config.nativeAutoUsePlan &&
+    !config.isSublimeCraft &&
+    !config.craftingType &&
+    !hasDynamicRecoveryDependencies(config.skills) &&
+    !(
+      [
+        'neutral',
+        'positive',
+        'negative',
+        'veryPositive',
+        'veryNegative',
+      ] as const
+    ).some(
+      (condition) => getConditionEffectsForConfig(config, condition).length > 0,
+    );
+  const isInertRecovery = (node: NodeState, action: Action): boolean => {
+    const before = node.state;
+    if (
+      !canProveWaitingInert ||
+      attained(before) ||
+      action.unresolved > 0 ||
+      !action.children.length ||
+      before.stability < before.maxStability ||
+      before.buffs.size ||
+      before.controlBuffTurns ||
+      before.intensityBuffTurns ||
+      before.harmonyData ||
+      !(
+        action.skill.stabilityGain > 0 ||
+        action.skill.effects?.some((effect) => effect.kind === 'stability')
+      )
+    )
+      return false;
+    // Compare every modeled field, ignoring only a useless turn and resources
+    // that strictly cannot improve. Cooldown progress, buffs, cleansing, item
+    // budgets, harmony, and other state changes all keep the action available.
+    const identity = (s: CraftingState): string => {
+      const nativeVariables = { ...buildCanonicalNativeVariables(s) };
+      // Availability propagation may materialize aliases absent at extraction.
+      // Their authoritative state fields are compared below, including droplets.
+      for (const key of [
+        'itemEffectiveness',
+        'qiDroplets',
+        'maxqiDroplets',
+        'qiCostReduction',
+        'qiCostPenalty',
+        'stabilityCostReduction',
+        'stabilityCostPenalty',
+      ])
+        delete nativeVariables[key];
+      if ((action.skill.successChance ?? 1) + before.successChanceBonus >= 1)
+        delete nativeVariables['prd_failures_' + action.skill.key];
+      return stateKey({
+        ...node,
+        state: s.copy({
+          qi: before.qi,
+          stability: before.stability,
+          stabilityPenalty: before.stabilityPenalty,
+          step: before.step,
+          nativeVariables,
+        }),
+      });
+    };
+    const original = identity(before);
+    return action.children.every(
+      ({ state: after }) =>
+        after.qi <= before.qi &&
+        after.stability <= before.stability &&
+        after.maxStability <= before.maxStability &&
+        identity(after) === original,
+    );
+  };
   const expand = (node: NodeState): Action[] => {
     const key = stateKey(node),
       cached = transitions.get(key);
@@ -281,6 +388,7 @@ export function constrainedSearch(
       }
       const action: Action = {
         skill,
+        before: before.outcomes,
         children: [],
         unresolved: distribution.unresolvedProbability,
         uncertain: distribution.probabilityUncertain,
@@ -349,6 +457,11 @@ export function constrainedSearch(
         }
       }
       if (!action.children.length && action.unresolved === 0) continue;
+      if (isInertRecovery(node, action)) {
+        pruned++;
+        if (node.state === state) inertRootActions.push(skill);
+        continue;
+      }
       action.immediate = combine(
         action,
         action.children.map((child) => leaf(child.state)),
@@ -426,6 +539,8 @@ export function constrainedSearch(
   let actions: Action[] = [];
   let policies: Policy[] = [];
   let completed = 0;
+  let rootBudgetExhausted = false;
+  let unresolvedActions: Action[] = [];
   if (!reached(state) && !ended(state)) {
     try {
       actions = expand(root).filter(
@@ -435,8 +550,10 @@ export function constrainedSearch(
       );
     } catch (error) {
       if (!(error instanceof SearchBudgetReached)) throw error;
+      rootBudgetExhausted = true;
     }
     // Root outcomes must be evaluated for every action before claiming a ranking.
+    unresolvedActions = actions.filter((action) => action.unresolved >= 1e-10);
     actions = actions.filter((action) => action.unresolved < 1e-10);
     policies = actions.map((action) => ({ action, value: action.immediate }));
     if (policies.length) completed = 1;
@@ -480,48 +597,61 @@ export function constrainedSearch(
   const recommend = (p: Policy): SkillRecommendation => {
     const a = p.action!,
       effects = getConditionEffectsForConfig(config, currentCondition);
-    const costs = calculateEffectiveActionCosts(
-      state,
-      a.skill,
-      config.minStability,
-      effects,
-      config,
-    );
-    const gains = a.children.reduce(
-      (g, o) => ({
-        completion:
-          g.completion +
-          o.probability * (o.state.completion - state.completion),
-        perfection:
-          g.perfection +
-          o.probability * (o.state.perfection - state.perfection),
-        stability:
-          g.stability + o.probability * (o.state.stability - state.stability),
-      }),
-      { completion: 0, perfection: 0, stability: 0 },
-    );
-    if (a.uncertain && a.children.length) {
-      gains.completion = Math.min(
-        ...a.children.map((c) => c.state.completion - state.completion),
-      );
-      gains.perfection = Math.min(
-        ...a.children.map((c) => c.state.perfection - state.perfection),
-      );
-      gains.stability = Math.min(
-        ...a.children.map((c) => c.state.stability - state.stability),
-      );
-    }
-    return {
-      skill: a.skill,
-      expectedGains: gains,
-      immediateGains: calculateDisplayedSkillGains(
-        state,
+    // Preview the technique on the same pre-use states as the transition.
+    // Stability previews are direct recovery, not net payment/decay deltas.
+    const previews = a.before.map((branch) => ({
+      probability: branch.probability,
+      costs: calculateEffectiveActionCosts(
+        branch.state,
+        a.skill,
+        config.minStability,
+        effects,
+        config,
+      ),
+      expected: calculateDisplayedSkillGains(
+        branch.state,
+        a.skill,
+        config,
+        effects,
+      ),
+      immediate: calculateDisplayedSkillGains(
+        branch.state,
         a.skill,
         config,
         effects,
         { includeExpectedValue: false },
       ),
-      effectiveCosts: { qi: costs.qiCost, stability: costs.stabilityCost },
+    }));
+    const average = (read: (preview: (typeof previews)[number]) => number) =>
+      previews.reduce(
+        (sum, preview) => sum + preview.probability * read(preview),
+        0,
+      );
+    const gains = (kind: 'expected' | 'immediate') => ({
+      completion: average((preview) => preview[kind].completion),
+      perfection: average((preview) => preview[kind].perfection),
+      stability: average((preview) => preview[kind].stability),
+    });
+    const expected = gains('expected');
+    // Progress still includes triggered buffs/harmony from the real transition.
+    // A direct-skill-only preview would hide legitimate end-of-action procs.
+    for (const bar of ['completion', 'perfection'] as const) {
+      expected[bar] = a.uncertain
+        ? Math.min(...a.children.map((child) => child.state[bar] - state[bar]))
+        : a.children.reduce(
+            (sum, child) =>
+              sum + child.probability * (child.state[bar] - state[bar]),
+            0,
+          );
+    }
+    return {
+      skill: a.skill,
+      expectedGains: expected,
+      immediateGains: gains('immediate'),
+      effectiveCosts: {
+        qi: average((preview) => preview.costs.qiCost),
+        stability: average((preview) => preview.costs.stabilityCost),
+      },
       score: p.value.goalProbabilityLowerBound,
       planning: { ...p.value, transitionUnresolvedProbability: a.unresolved },
       reasoning:
@@ -594,7 +724,32 @@ export function constrainedSearch(
     optimalRotationLabels: rotation.map(techniqueDisplayName),
     blockedReasons: recommendations.length
       ? undefined
-      : getBlockedSkillReasons(state, config, currentCondition),
+      : [
+          ...getBlockedSkillReasons(state, config, currentCondition),
+          ...inertRootActions.map((skill) => ({
+            skillName: techniqueDisplayName(skill),
+            reason: 'dominated' as const,
+            details:
+              'Recovery adds no modeled benefit here and only spends resources or a turn.',
+          })),
+          ...unresolvedActions.map((action) => ({
+            skillName: techniqueDisplayName(action.skill),
+            reason: 'unresolved' as const,
+            details:
+              config.nativeAutoUsePlan?.unsupportedReason ??
+              'Immediate outcomes are not fully modelled. Automatic execution is paused; no safe recommendation is certified.',
+          })),
+          ...(rootBudgetExhausted
+            ? [
+                {
+                  skillName: 'Planner',
+                  reason: 'budget' as const,
+                  details:
+                    'Search budget exhausted before all root actions could be evaluated. Increase the search budget or recalculate; automatic execution remains paused.',
+                },
+              ]
+            : []),
+        ],
     searchMetrics: {
       nodesExplored: nodes,
       cacheHits: hits,

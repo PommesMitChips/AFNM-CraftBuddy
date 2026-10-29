@@ -22,38 +22,15 @@ Authority order: installed runtime bundle → tests → this document. When they
 
 ## October 2026 audit and planner revision
 
-The installed runtime inspected in the audit was **0.7.18-97c093b**, while
-CraftBuddy 6.8.0 targeted 0.7.17. Historical corpus counts and release results
-below describe that earlier baseline, not exhaustive proof of 0.7.18 or the new
-planner. Current targeted tests and build results must be recorded separately.
+The installed runtime inspected in the audit was **0.7.18-97c093b**, while CraftBuddy 6.8.0 targeted 0.7.17. Historical corpus counts and release results below describe that earlier baseline, not exhaustive proof of 0.7.18 or the new planner. Current results and all 28 automated-review dispositions are recorded in [PR4_REVIEW_VALIDATION.md](PR4_REVIEW_VALIDATION.md).
 
-The production planner now uses discrete supported success, crit and effect
-chance branches from the TypeScript transition model. Future buff state stays
-inside those branches; bounded enumeration records unresolved probability rather
-than pretending unexplored outcomes are safe. A separate handwritten stability
-simulation is not authoritative: payment and mastery phases must agree with the
-action transition used for planning. Expected-value APIs remain for display and
-legacy/reference search.
+The production planner now uses discrete supported success, crit and effect chance branches from the TypeScript transition model. Future buff state stays inside those branches; bounded enumeration records unresolved probability rather than pretending unexplored outcomes are safe. A separate handwritten stability simulation is not authoritative: payment and mastery phases must agree with the action transition used for planning. Expected-value APIs remain for display and legacy/reference search.
 
-`resolvePlanningGoals` separates requested completion/perfection from actual
-item tiers. Explicit 1-8 band settings request both bars up to their actual caps.
-Auto requests the caps with extra-band ambition enabled, or the ordinary tier
-requirements with it disabled. Missing caps fall back to ordinary requirements.
-The persisted completion ceiling key now represents a Completion Band Goal.
-Item tiers and band thresholds are unchanged. The old five-completion-band
-early-finish shortcut was removed from the model after checking installed
-0.7.18: resolution requires stability zero or both actual cap flats. The same
-flat-cap rule was already recorded in the 0.7.17 runtime evidence.
+`resolvePlanningGoals` separates requested completion/perfection from actual item tiers. Explicit 1-8 band settings request both bars up to their actual caps. Auto requests the caps with extra-band ambition enabled, or the ordinary tier requirements with it disabled. Missing caps fall back to ordinary requirements. The persisted completion ceiling key now represents a Completion Band Goal. Item tiers and band thresholds are unchanged. The old five-completion-band early-finish shortcut was removed from the model after checking installed 0.7.18: resolution requires stability zero or both actual cap flats. The same flat-cap rule was already recorded in the 0.7.17 runtime evidence.
 
-New goal tests demonstrate full-bar restoration is unnecessary, selected-goal
-work remains after baseline success, and immediate terminal scores retain the
-same goal settings at every depth. These tests do not prove every requested
-craft feasible or all effects supported. Any unsupported effect or exhausted
-branch budget must be distinguished from a proven safe continuation.
+New goal tests demonstrate full-bar restoration is unnecessary, selected-goal work remains after baseline success, and immediate terminal scores retain the same goal settings at every depth. These tests do not prove every requested craft feasible or all effects supported. Any unsupported effect or exhausted branch budget must be distinguished from a proven safe continuation.
 
-Rust remains a reference for the historical transition surface. Its old EV
-scorer/prior does not implement the new production planner or certify its
-goal semantics. Do not infer new cross-engine parity from the older corpus.
+Rust remains a reference for the historical transition surface. Its old EV scorer/prior does not implement the new production planner or certify its goal semantics. Do not infer new cross-engine parity from the older corpus.
 
 ## How parity is proven
 
@@ -109,7 +86,7 @@ Per event both engines clamp with `min(cap, max(0, floor(value)))`, award `+5` h
 
 These are real gaps, not rounding noise. They are stated here so nobody "discovers" them as bugs.
 
-1. **Mid-technique stat-modifier flip.** In the runtime a focus flip between two effects of the *same* technique retunes intensity/control for the **later** effects of that technique. CraftBuddy evaluates effect scaling once per action, so a flip affects scoring and every subsequent turn, but not the remaining effect magnitudes within the same turn.
+1. **Mid-technique stat-modifier flip.** In the runtime a focus flip between two effects of the _same_ technique retunes intensity/control for the **later** effects of that technique. CraftBuddy evaluates effect scaling once per action, so a flip affects scoring and every subsequent turn, but not the remaining effect magnitudes within the same turn.
 2. **Per-application reconstruction.** Legacy EV transitions reconstruct running bar values by distributing each aggregate proportionally across raw per-effect contributions (`scaleBarContributions`). Discrete action branches remove success/crit averaging at their decision sites, but do not by themselves prove exact runtime integer order for every multi-effect/trigger combination. Keep explicit parity cases for those combinations.
 3. **Disciplined Touch and the legacy scalar path expose no per-effect breakdown**, so they synthesize one application per moved bar, completion first (`synthesizeBarContributions`). Identical in both engines, and equivalent to the old single-delta model except when a band is cleared between the two applications.
 
@@ -214,7 +191,7 @@ Outcome layer (`src/optimizer/outcome.ts`):
 - band widths from the recipe's completion/perfection stats, each successive band costing `1.3x` the previous (runtime `qIa`)
 - `TIER_REQUIREMENTS`: `basic` = 1 completion band; `perfect` = 1 + 1; `sublime` = **2 + 2**, and only when the recipe has a distinct sublime item
 - fractional bonus-roll chance carried separately from guaranteed bands, so a near-miss is never reported as banked
-- `willAutoFinish` mirroring the runtime predicate, including the overcraft branch at `>= 5` guaranteed completion bands
+- `willAutoFinish` resolves at stability zero or both actual cap flats; five completion bands alone do not finish a 0.7.18 craft. The Rust reference predicate follows the same rule. Explicit zero caps stay zero; absent/non-finite caps use the documented fallback.
 - unilateral overcraft reward scaling (`computeOvercraftExtras`): each extra perfection band scales result stacks by `1 + (bands - baseline) * 0.2` (baseline 1 perfect / 2 sublime, plus +1 harmony-augment quality on the sublime path), each extra completion band refunds 20% of recipe cost capped at 80% (five bands, sublime-capable crafts only), all gated on the target tier being secured — `docs/project/RUNTIME_EVIDENCE.md` section 12
 
 Search layer (`src/optimizer/search.ts`): see `docs/project/OPTIMIZER_DESIGN.md`.

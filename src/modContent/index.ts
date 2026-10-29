@@ -440,9 +440,11 @@ function buildAutoCraftCooldownSignature(): string {
 
 function buildAutoCraftInventorySignature(): string {
   const inventoryItems = cachedStore?.getState?.()?.inventory?.items as
-    InventoryItemLike[] | undefined;
+    | InventoryItemLike[]
+    | undefined;
   const quickAccess = ((lastEntity as any)?.craftingQuickAccess || []) as (
-    string | undefined
+    | string
+    | undefined
   )[];
   return serializeQuickAccessInventory(quickAccess, inventoryItems);
 }
@@ -563,7 +565,9 @@ function buildExecutionRequestForRecommendation(
   recommendation: SkillRecommendation,
 ): AutoCraftExecutionRequest {
   const actionKind = (recommendation.skill.actionKind ?? 'skill') as
-    'skill' | 'item' | 'finish';
+    | 'skill'
+    | 'item'
+    | 'finish';
 
   return {
     kind: actionKind,
@@ -948,7 +952,8 @@ function configureNativeOptimizerProviders(): void {
       }
 
       const nativeTechnique = (context.skill as any)?.nativeTechnique as
-        CraftingTechnique | undefined;
+        | CraftingTechnique
+        | undefined;
       if (!nativeTechnique) {
         return undefined;
       }
@@ -1491,7 +1496,8 @@ function updateProgressCapsFromModApi(
 }
 
 function getCurrentKnownCraftingTechniques():
-  KnownCraftingTechnique[] | undefined {
+  | KnownCraftingTechnique[]
+  | undefined {
   const state = cachedStore?.getState?.();
   const knownTechniques = getKnownCraftingTechniquesFromState(state);
   if (knownTechniques) {
@@ -1538,7 +1544,7 @@ function buildConfigFromEntity(
     ...extraSkills,
   ];
   const pillsPerRound = Math.max(
-    1,
+    0,
     parseGameNumber((stats as any)?.pillsPerRound, 1),
   );
 
@@ -1841,7 +1847,8 @@ function updateRecommendation(
   // Extract harmony data from game's progressState for sublime crafts
   // @ts-ignore - harmonyTypeData exists on game's ProgressState
   const gameHarmonyData = progressState?.harmonyTypeData as
-    HarmonyData | undefined;
+    | HarmonyData
+    | undefined;
   // @ts-ignore - harmony exists on game's ProgressState
   const gameHarmony = progressState?.harmony ?? 0;
   const rawNativeVariables = resolveNativeCraftingVariables(
@@ -1920,7 +1927,8 @@ function updateRecommendation(
   });
 
   const currentConditionType = normalizedCondition as unknown as
-    string | undefined;
+    | string
+    | undefined;
   const forecastedConditionTypes = nextConditions as unknown as string[];
   const targetCompletionAtSearchStart = targetCompletion;
   const targetPerfectionAtSearchStart = targetPerfection;
@@ -2800,7 +2808,8 @@ function detectCraftingState(): {
           recipe: craftingState.recipe as RecipeItem | undefined,
           recipeStats: craftingState.recipeStats,
           inventoryItems: state?.inventory?.items as
-            InventoryItemLike[] | undefined,
+            | InventoryItemLike[]
+            | undefined,
           consumedPillsThisTurn: Number(craftingState?.consumedPills ?? 0) || 0,
           trainingMode: craftingState?.trainingMode !== undefined,
         };
@@ -3096,7 +3105,8 @@ function pollCraftingState(): void {
     );
     const previousInventorySignature = serializeQuickAccessInventory(
       ((lastEntity as any)?.craftingQuickAccess || []) as (
-        string | undefined
+        | string
+        | undefined
       )[],
       inventoryItems,
     );
@@ -4460,7 +4470,8 @@ function processCraftingState(craftingState: any): void {
   );
   const previousBuffSignature = serializeCraftingBuffs(lastEntity?.buffs);
   const inventoryItems = cachedStore?.getState?.()?.inventory?.items as
-    InventoryItemLike[] | undefined;
+    | InventoryItemLike[]
+    | undefined;
   const currentInventorySignature = serializeQuickAccessInventory(
     ((entity as any)?.craftingQuickAccess || []) as (string | undefined)[],
     inventoryItems,
