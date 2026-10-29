@@ -1562,3 +1562,15 @@ registry would incorrectly predict item consumption. The whitelist is named and
 commented explicitly in `nativeAutoUsePlan.ts`; `prReviewRound2.test.ts`
 covers invalid indices for both comparisons and valid comparisons across all
 nine playable harmonies. Revisit this list when runtime evidence changes.
+
+
+### Native pre-click gate, rechecked for review comment 4413767132
+
+In the same inspected 0.7.18 Game.js, the control builder computes action costs
+with `s_o` and `canUse` with `dcu` using the pre-action entity/variables,
+then passes that flag and the click callback to the technique control. Only the
+click callback runs native auto-use `v()`, followed by technique dispatch
+`bRc` and history recording `cpc`. Thus an item restoring Qi cannot make a
+currently disabled technique clickable. Native auto-use stays inside the enabled
+control path; direct dispatch remains forbidden when the loadout is active.
+This is also the contract already recorded in section 17.3.

@@ -7,6 +7,7 @@
 
 import { CraftingState, BuffType } from './state';
 import type { NativeAutoUsePlan } from './nativeAutoUsePlan';
+import { findUnsupportedCraftingPayload } from './transitionValidation';
 import {
   enumerateDecisions,
   resolvedCrit,
@@ -2796,6 +2797,29 @@ export interface ActionOutcomeDistribution {
   unresolvedProbability: number;
   /** Hidden initial PRD streak: values must be bounded over outcomes, not averaged. */
   probabilityUncertain?: boolean;
+  unsupportedReason?: string;
+}
+
+export function getUnsupportedTransitionReason(
+  state: CraftingState,
+  skill: SkillDefinition,
+  config: OptimizerConfig,
+  conditionEffects: ConditionEffect[] = [],
+): string | undefined {
+  const raw = findUnsupportedCraftingPayload(
+    skill,
+    Array.from(state.buffs.values(), (b) => b.definition),
+    conditionEffects,
+  );
+  if (raw) return raw;
+  const resolved = getResolvedActiveBuffs(state, config);
+  return resolved === state.buffs
+    ? undefined
+    : findUnsupportedCraftingPayload(
+        skill,
+        Array.from(resolved.values(), (b) => b.definition),
+        conditionEffects,
+      );
 }
 
 /** Every branch reuses the same payment/mastery/tick/harmony transition. */
@@ -2809,6 +2833,14 @@ export function applySkillOutcomes(
   targetPerfection = 0,
   maxOutcomes = 64,
 ): ActionOutcomeDistribution {
+  const unsupportedReason = getUnsupportedTransitionReason(
+    state,
+    skill,
+    config,
+    conditionEffects,
+  );
+  if (unsupportedReason)
+    return { outcomes: [], unresolvedProbability: 1, unsupportedReason };
   let probabilityUncertain = false;
   const distribution = enumerateDecisions(
     (resolve) =>

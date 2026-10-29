@@ -9,7 +9,11 @@
  * Crafting condition types matching the game.
  */
 export type CraftingCondition =
-  'neutral' | 'positive' | 'negative' | 'veryPositive' | 'veryNegative';
+  | 'neutral'
+  | 'positive'
+  | 'negative'
+  | 'veryPositive'
+  | 'veryNegative';
 
 /**
  * Technique action types.
@@ -653,7 +657,8 @@ function cacheCompiledExpression(
     EXPRESSION_CACHE.size >= MAX_EXPRESSION_CACHE_SIZE
   ) {
     const oldestKey = EXPRESSION_CACHE.keys().next().value as
-      string | undefined;
+      | string
+      | undefined;
     if (oldestKey !== undefined) {
       EXPRESSION_CACHE.delete(oldestKey);
     }
@@ -767,9 +772,30 @@ function compileExpression(
 }
 
 /**
- * Expression evaluator for game equations with variable substitution.
- * Returns 0 for invalid or blocked expressions.
+ * Whether an expression uses syntax and functions supported by certification.
+ * EV-only random placeholders cannot establish a deterministic branch value.
  */
+export function isSupportedCraftingExpression(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  if (!value) return true;
+  // EV replacement of {rng} is not an enumerated random outcome.
+  if (value.includes('{rng}') || /\b[A-Za-z_]\w*\s*\./.test(value))
+    return false;
+  const calls = Array.from(
+    value
+      .replace(/\band\b/g, '&&')
+      .replace(/\bor\b/g, '||')
+      .matchAll(/\b([A-Za-z_]\w*)\s*\(/g),
+    (match) => match[1],
+  );
+  return (
+    calls.every((name) =>
+      ['floor', 'ceil', 'round', 'min', 'max', 'abs'].includes(name),
+    ) && compileExpression(value) !== null
+  );
+}
+
+/** Expression evaluator for EV previews; invalid syntax retains the legacy zero fallback. */
 export function evalExpression(
   eqn: string,
   variables: ScalingVariables,

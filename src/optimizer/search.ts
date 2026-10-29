@@ -181,7 +181,7 @@ export interface OutcomeProjection {
   readonly tier: OutcomeTier;
   /** Tier reachable if both bonus rolls land. */
   readonly optimisticTier: OutcomeTier;
-  /** Best tier this craft can reach at all — what the search aims at. */
+  /** Best item tier this craft can reach, independent of the selected planning goals. */
   readonly targetTier: OutcomeTier;
   readonly completion: OutcomeBarStatus;
   readonly perfection: OutcomeBarStatus;
@@ -189,6 +189,14 @@ export interface OutcomeProjection {
   readonly bindingBar: 'completion' | 'perfection' | 'none';
   /** True when the game's auto-finish predicate already holds. */
   readonly willAutoFinish: boolean;
+  /** Requested planning work, distinct from the item's tier requirements. */
+  readonly requestedGoals?: {
+    readonly completion: { target: number; bands: number; bonusChance: number };
+    readonly perfection: { target: number; bands: number; bonusChance: number };
+    readonly attained: boolean;
+    readonly bindingBar: 'completion' | 'perfection' | 'none';
+    readonly needsResolution: boolean;
+  };
 }
 
 export interface SearchResult {

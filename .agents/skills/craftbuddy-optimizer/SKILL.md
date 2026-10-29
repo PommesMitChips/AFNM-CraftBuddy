@@ -63,7 +63,7 @@ Use this before touching recommendation behavior. `docs/project/OPTIMIZER_DESIGN
 | Search scoring/order/cache edge | `search.test.ts` |
 | Bands, tiers, auto-finish | `outcome.test.ts`, `outcomeProjection.test.ts` |
 | Requested goals and propagation | `planningGoals.test.ts`, goal/terminal cases in `auditSearch.test.ts` |
-| Stochastic decisions and constrained planning | `stochasticTransitions.test.ts`, `constrainedPlanner.test.ts`, `planningComparator.test.ts`, `nativeAutoUsePlan.test.ts`, `prReviewRegressions.test.ts`, `prReviewRound2.test.ts`, `sublimeRecovery.test.ts` |
+| Stochastic decisions and constrained planning | `stochasticTransitions.test.ts`, `constrainedPlanner.test.ts`, `planningComparator.test.ts`, `nativeAutoUsePlan.test.ts`, `prReviewRegressions.test.ts`, `prReviewRound2.test.ts`, `sublimeRecovery.test.ts`, `certificationBoundaries.test.ts` |
 | Transition, buffs, masteries, action costs | `skills.test.ts` |
 | Formula or runtime parity | `gameAccuracy.test.ts`, `runtimeParity.test.ts` |
 | Harmony subsystem | `harmony.test.ts`, `harmonyRegistry.test.ts`, plus simulations |
@@ -100,3 +100,5 @@ Use this before touching recommendation behavior. `docs/project/OPTIMIZER_DESIGN
 - `src/optimizer/outcome.ts`
 - `src/__tests__/craftSimulation.test.ts`
 - `src/__tests__/search.test.ts`
+
+15. **Certificate preflight is strict.** Unsupported technique/buff/mastery/trigger/condition/scaling payloads remain unresolved through `transitionValidation.ts` and `applySkillOutcomes`; never promote a permissive EV fallback into a verified transition. Native item projection follows the same rule. Keep tier requirements separate from the optional requested-goal projection.

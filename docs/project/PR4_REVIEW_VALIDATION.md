@@ -140,3 +140,23 @@ Validated on 2026-10-29:
 - Documentation inventory, link, freshness and authority checks passed. Transition arithmetic, Rust source and the differential corpus were unchanged; prior scoped Rust results above were not rerun or relabeled as a fresh run.
 
 This is executable synthetic/source/artifact validation, not new live-game acceptance. The previously installed mod and preserved comparison archives were not modified.
+
+## Fourth review follow-up (reviewed head cf73ce2)
+
+Three valid findings were fixed, including a carried-over pre-auto-use gate finding. The proposed step-zero-reagent exception was rejected with a regression showing the actual availability change and why it cannot benefit an inert wait.
+
+| Review comment | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 4413767132 | Preserve pre-auto-use technique availability | Fixed. Candidate admission now uses canApplySkill against the pre-hook state (the same predicate used by getAvailableSkills), before lazily projecting native items. A 5-Qi state cannot trigger a 10-Qi technique through an auto-use Qi-restoring pill. Enabled alternatives still receive the projected item effects; unavailable post-item branches remain unresolved. Runtime Evidence §19 records the enabled-control/callback order. |
+| 4415878062 | Step-zero reagent expiry should disable inert-recovery pruning | Disagree with this example and remedy. A reagent in the planner's ordinary action roster is optional. Advancing the turn only removes that choice; skipping the inert restore keeps at least those options and more Qi. The regression confirms the reagent is available before the restore and unavailable afterward, while the no-benefit restore is correctly pruned. Adding a blanket exclusion would permit wasted restores again. Forced native item plans are already excluded from this proof, and cooldowns, forecast conditions and genuine turn-dependent expressions remain protected. |
+| 4416024351 | Unknown effects can receive complete transition certificates | Fixed with conservative certificate preflight for known effect/mastery/trigger kinds, condition modes, scaling shapes and supported expression syntax, including nested and active/resolved buff definitions. Unsupported payloads return unresolved mass one plus a reason, and cannot pass root/dispatch certification. Unknown native item effects use the same boundary. Legacy EV estimates remain permissive. Nullable optional metadata from legacy replay transport remains supported. |
+| 4416024360 | Selected goals overwrite tier requirements and binding bar | Fixed. Tier requiredBands and bindingBar now come from TIER_REQUIREMENTS/classifyOutcome. A separate requestedGoals projection and UI section retain selected flat/band targets, attainment, binding and live-resolution status. Perfect can be secured while an eight-band goal is still pending; met goals have no binding bar even while the craft remains active. |
+
+### Fourth-follow-up validation
+
+- Full Jest run: **52 suites / 1,143 tests passed**. The two affected presentation/certification suites were also rerun after the final compatibility/presentation adjustments (**46 tests passed**).
+- Strict TypeScript, production build and UI harness build passed at **6.9.0**. The three existing webpack size warnings remain. The new harness scenes are `?state=outcome-goals` and `?state=outcome-goals-met`.
+- Compiled-worker checks cover unsupported-effect refusal, pre-hook affordability, separate eight-band goal projection, preserved sublime inert-recovery behavior, guaranteed finish versus gamble, and hidden-PRD uncertainty handling.
+- Seven fixed-budget production replay recommendations and planning fields remain unchanged versus cf73ce2. Initial probing exposed optional null metadata in two legacy skills; compatibility was corrected and regressed before the final results.
+- Documentation inventory/link/freshness/authority checks passed. Existing Rust transition arithmetic and differential data were not modified.
+- Visual inspection was attempted, but the app browser timed out reaching the localhost harness. No visual or live-game acceptance claim is made; the temporary server was stopped. The installed mod remains unchanged.

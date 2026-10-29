@@ -3,7 +3,8 @@ import {
   applySkillOutcomes,
   calculateDisplayedSkillGains,
   calculateEffectiveActionCosts,
-  getAvailableSkills,
+  canApplySkill,
+  getUnsupportedTransitionReason,
   getBlockedSkillReasons,
   getBuffDiscordantConditions,
   getConditionEffectsForConfig,
@@ -15,6 +16,7 @@ import {
   resolvePlanningGoals,
   classifyOutcome,
   willAutoFinish,
+  TIER_REQUIREMENTS,
 } from './outcome';
 import { getBonusAndChance, type CraftingCondition } from './gameTypes';
 import type {
@@ -88,6 +90,7 @@ interface Action {
   unresolved: number;
   uncertain?: boolean;
   immediate: PlanningValue;
+  unsupportedReason?: string;
 }
 interface Policy {
   value: PlanningValue;
@@ -117,6 +120,8 @@ function stateKey(node: NodeState): string {
 }
 
 /** Unknown expressions/callbacks prevent proving that waiting cannot help. */
+// Expiry of an optional step-zero reagent only removes a choice; retaining the
+// earlier state is no worse. Forced native auto-use is excluded separately.
 function hasDynamicRecoveryDependencies(
   value: unknown,
   seen = new Set<object>(),
@@ -345,32 +350,57 @@ export function constrainedSearch(
       return cached;
     }
     const actions: Action[] = [];
-    // Native auto-use can make a previously unaffordable technique legal.
-    const native = projectNativeAutoUseBranches(
-      node.state,
-      config,
-      node.condition,
-    );
-    const roster = config.nativeAutoUsePlan
-      ? config.skills
-      : getAvailableSkills(node.state, config, node.condition);
-    for (const skill of roster) {
-      check();
-      nodes++;
+    // Native auto-use runs inside an enabled technique click. It cannot rescue
+    // an action that fails the pre-click availability gate. Validate payloads
+    // first so unsupported data is reported as unknown, not silently evaluated.
+    let native: ReturnType<typeof projectNativeAutoUseBranches> | undefined;
+    for (const skill of config.skills) {
       if (skill.actionKind === 'finish') continue;
       const effects = getConditionEffectsForConfig(config, node.condition);
-      const before =
-        skill.actionKind === 'item'
+      const unsupportedReason = getUnsupportedTransitionReason(
+        node.state,
+        skill,
+        config,
+        effects,
+      );
+      if (
+        !unsupportedReason &&
+        !canApplySkill(
+          node.state,
+          skill,
+          config.minStability,
+          config.maxToxicity ?? 0,
+          node.condition,
+          effects,
+          config.pillsPerRound ?? 1,
+          config,
+        )
+      )
+        continue;
+      check();
+      nodes++;
+      const before = unsupportedReason
+        ? { outcomes: [], unresolvedProbability: 1, unsupportedReason }
+        : skill.actionKind === 'item'
           ? {
               outcomes: [{ state: node.state, probability: 1 }],
               unresolvedProbability: 0,
             }
-          : native;
+          : (native ??= projectNativeAutoUseBranches(
+              node.state,
+              config,
+              node.condition,
+            ));
       const distribution: {
         outcomes: Array<{ state: CraftingState; probability: number }>;
         unresolvedProbability: number;
         probabilityUncertain?: boolean;
-      } = { outcomes: [], unresolvedProbability: before.unresolvedProbability };
+        unsupportedReason?: string;
+      } = {
+        outcomes: [],
+        unresolvedProbability: before.unresolvedProbability,
+        unsupportedReason: before.unsupportedReason,
+      };
       for (const branch of before.outcomes) {
         if (branch.state.stability <= 0) {
           distribution.unresolvedProbability += branch.probability;
@@ -387,6 +417,7 @@ export function constrainedSearch(
           64,
         );
         distribution.probabilityUncertain ||= after.probabilityUncertain;
+        distribution.unsupportedReason ??= after.unsupportedReason;
         distribution.unresolvedProbability +=
           branch.probability * after.unresolvedProbability;
         for (const o of after.outcomes)
@@ -395,11 +426,7 @@ export function constrainedSearch(
             probability: branch.probability * o.probability,
           });
         // An action illegal on a pre-use branch cannot be assumed to execute.
-        if (
-          !after.outcomes.length &&
-          after.unresolvedProbability === 0 &&
-          before.outcomes.length > 1
-        )
+        if (!after.outcomes.length && after.unresolvedProbability === 0)
           distribution.unresolvedProbability += branch.probability;
       }
       const action: Action = {
@@ -409,6 +436,7 @@ export function constrainedSearch(
         unresolved: distribution.unresolvedProbability,
         uncertain: distribution.probabilityUncertain,
         immediate: leaf(node.state),
+        unsupportedReason: distribution.unsupportedReason,
       };
       const consumes = skill.consumesTurn ?? skill.actionKind !== 'item';
       for (const outcome of distribution.outcomes) {
@@ -695,7 +723,7 @@ export function constrainedSearch(
     };
   };
   const outcome = classifyOutcome(state, goals.bands);
-  const bar = (value: number, width: number, goal: number) => {
+  const bar = (value: number, width: number, requiredBands: number) => {
     const counted =
       width > 0
         ? getBonusAndChance(value, width)
@@ -703,25 +731,40 @@ export function constrainedSearch(
     return {
       value,
       bands: counted.guaranteed,
-      requiredBands: width > 0 ? getBonusAndChance(goal, width).guaranteed : 0,
+      requiredBands: width > 0 ? requiredBands : 0,
       bonusChance: counted.bonusChance,
       nextThreshold: counted.nextThreshold,
       pointsToNextBand: Math.max(0, counted.nextThreshold - value),
     };
   };
+  const requirement = TIER_REQUIREMENTS[goals.bands.targetTier];
+  const requestedBar = (target: number, width: number) => {
+    const info =
+      width > 0
+        ? getBonusAndChance(target, width)
+        : { guaranteed: 0, bonusChance: 0 };
+    return { target, bands: info.guaranteed, bonusChance: info.bonusChance };
+  };
   const projection: OutcomeProjection = {
     tier: outcome.tier,
     optimisticTier: outcome.optimisticTier,
     targetTier: goals.bands.targetTier,
-    completion: bar(state.completion, targetCompletion, goals.completion),
-    perfection: bar(state.perfection, targetPerfection, goals.perfection),
-    bindingBar: reached(state)
-      ? 'none'
-      : (goals.completion > 0 ? state.completion / goals.completion : 1) <
-          (goals.perfection > 0 ? state.perfection / goals.perfection : 1)
-        ? 'completion'
-        : 'perfection',
+    completion: bar(state.completion, targetCompletion, requirement.completion),
+    perfection: bar(state.perfection, targetPerfection, requirement.perfection),
+    bindingBar: outcome.blockingRequirement,
     willAutoFinish: ended(state),
+    requestedGoals: {
+      completion: requestedBar(goals.completion, targetCompletion),
+      perfection: requestedBar(goals.perfection, targetPerfection),
+      attained: attained(state),
+      bindingBar: attained(state)
+        ? 'none'
+        : (goals.completion > 0 ? state.completion / goals.completion : 1) <
+            (goals.perfection > 0 ? state.perfection / goals.perfection : 1)
+          ? 'completion'
+          : 'perfection',
+      needsResolution: attained(state) && !ended(state),
+    },
   };
   const recommendations = policies.map(recommend);
   recommendations.forEach((r, i) => {
@@ -746,7 +789,22 @@ export function constrainedSearch(
     blockedReasons: recommendations.length
       ? undefined
       : [
-          ...getBlockedSkillReasons(state, config, currentCondition),
+          ...getBlockedSkillReasons(
+            state,
+            {
+              ...config,
+              skills: config.skills.filter(
+                (skill) =>
+                  !getUnsupportedTransitionReason(
+                    state,
+                    skill,
+                    config,
+                    getConditionEffectsForConfig(config, currentCondition),
+                  ),
+              ),
+            },
+            currentCondition,
+          ),
           ...inertRootActions.map((skill) => ({
             skillName: techniqueDisplayName(skill),
             reason: 'dominated' as const,
@@ -757,6 +815,7 @@ export function constrainedSearch(
             skillName: techniqueDisplayName(action.skill),
             reason: 'unresolved' as const,
             details:
+              action.unsupportedReason ??
               config.nativeAutoUsePlan?.unsupportedReason ??
               'Immediate outcomes are not fully modelled. Automatic execution is paused; no safe recommendation is certified.',
           })),

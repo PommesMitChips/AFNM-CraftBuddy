@@ -1522,6 +1522,49 @@ const OutcomeSection = memo(function OutcomeSection({
         )}
       </Typography>
 
+      {summary.requestedGoals && (
+        <Box
+          data-testid="outcome-requested-goals"
+          sx={{
+            mt: 0.65,
+            pt: 0.55,
+            borderTop: `1px solid ${colors.borderSubtle}`,
+          }}
+        >
+          <Typography
+            variant="caption"
+            sx={{
+              display: 'block',
+              color: colors.gold,
+              fontWeight: 700,
+              fontSize: '0.62rem',
+            }}
+          >
+            {summary.requestedGoals.status}
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{
+              display: 'block',
+              color: colors.textSecondary,
+              fontSize: '0.62rem',
+            }}
+          >
+            {summary.requestedGoals.completionLabel}
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{
+              display: 'block',
+              color: colors.textSecondary,
+              fontSize: '0.62rem',
+            }}
+          >
+            {summary.requestedGoals.perfectionLabel}
+          </Typography>
+        </Box>
+      )}
+
       {summary.autoFinish.active && !compact && (
         <Typography
           data-testid="outcome-auto-finish-detail"

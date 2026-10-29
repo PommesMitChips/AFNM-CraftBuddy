@@ -4,6 +4,7 @@ import {
   applySkillOutcomes,
   getConditionEffectsForConfig,
   getCraftingActionVariables,
+  getUnsupportedTransitionReason,
   type ActionOutcomeDistribution,
   type OptimizerConfig,
   type SkillDefinition,
@@ -326,10 +327,21 @@ export function projectNativeAutoUseBranches(
   config: OptimizerConfig,
   currentCondition?: string,
 ): ActionOutcomeDistribution {
+  for (const item of Object.values(config.nativeAutoUsePlan?.items ?? {})) {
+    const unsupportedReason = getUnsupportedTransitionReason(
+      state,
+      item.action,
+      config,
+      getConditionEffectsForConfig(config, currentCondition),
+    );
+    if (unsupportedReason)
+      return { outcomes: [], unresolvedProbability: 1, unsupportedReason };
+  }
   const selected = selectItems(state, config, currentCondition);
   if (!selected) return { outcomes: [], unresolvedProbability: 1 };
   let outcomes = [{ state, probability: 1 }];
   let unresolvedProbability = 0;
+  let unsupportedReason: string | undefined;
   for (const { item } of selected) {
     const next: ActionOutcomeDistribution['outcomes'] = [];
     for (const branch of outcomes) {
@@ -371,6 +383,7 @@ export function projectNativeAutoUseBranches(
       );
       unresolvedProbability +=
         branch.probability * distribution.unresolvedProbability;
+      unsupportedReason ??= distribution.unsupportedReason;
       const mass =
         distribution.outcomes.reduce(
           (sum, child) => sum + child.probability,
@@ -407,5 +420,9 @@ export function projectNativeAutoUseBranches(
     }
     outcomes = next;
   }
-  return { outcomes, unresolvedProbability };
+  return {
+    outcomes,
+    unresolvedProbability,
+    ...(unsupportedReason ? { unsupportedReason } : {}),
+  };
 }

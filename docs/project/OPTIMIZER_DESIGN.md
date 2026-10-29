@@ -5,7 +5,7 @@ authoritative: true
 owner: craftbuddy-maintainers
 game_version: 0.7.17-d8ae6ce
 last_verified: 2026-10-29
-source_of_truth: src/optimizer/outcome.ts, src/optimizer/search.ts, src/optimizer/constrainedPlanner.ts, src/optimizer/searchBackend.ts, src/optimizer/skills.ts, src/optimizer/stochastic.ts, src/optimizer/state.ts, src/optimizer/index.ts
+source_of_truth: src/optimizer/outcome.ts, src/optimizer/search.ts, src/optimizer/constrainedPlanner.ts, src/optimizer/searchBackend.ts, src/optimizer/skills.ts, src/optimizer/stochastic.ts, src/optimizer/transitionValidation.ts, src/optimizer/state.ts, src/optimizer/index.ts
 review_cycle_days: 30
 related_files:
   - AGENTS.md
@@ -30,6 +30,7 @@ The installed game inspected during that audit was **0.7.18-97c093b**. Historica
 | `outcome.ts` | Band thresholds, actual item tiers, actual auto-finish rule, `resolvePlanningGoals` |
 | `constrainedPlanner.ts` | Production `constrainedSearch`, bounded stochastic planning and policy metadata |
 | `skills.ts` | Action legality and transition phases, discrete action outcomes and survival checks |
+| `transitionValidation.ts` | Conservative payload/schema preflight for certified transitions; unsupported mechanics remain unresolved |
 | `stochastic.ts` | Bounded decision enumeration with unresolved probability mass retained explicitly |
 | `state.ts` | Resources, cooldowns, buffs/internal state, harmony, inventory and step |
 | `gameTypes.ts` | Scaling, effect definitions, condition data and band-count formulas |
@@ -137,3 +138,11 @@ See [the review report](PR4_REVIEW_VALIDATION.md) for the initial 26 Cubic findi
 Goal Priority Bias weights only the secondary average-progress term, after the joint minimum progress and the failure/goal-probability checks. A conservative dominance check rejects simple full-bar recovery only when every immediate outcome proves no modeled benefit; dynamic expressions, useful cooldown waits, buffs, native item hooks and condition/harmony changes prevent that proof.
 
 The independent artifact review supplied a sublime full-bar recovery counterexample. The recovery proof now accepts eligible sublime and recognized-harmony states when their complete harmony/subsystem state remains unchanged across every outcome. A useful change in heat, charges, patterns, attunement or release effects prevents pruning. Unknown or unidentified harmony implementations remain excluded. See the supplied fixture and `sublimeRecovery.test.ts`, linked in [the validation report](PR4_REVIEW_VALIDATION.md#independent-artifact-review-sublime-recovery-loop).
+
+### Certification and presentation boundaries
+
+A technique must pass the original state's availability predicate before its native item hook is projected. Items cannot unlock a disabled button needed to trigger their own use. The post-item transition is still checked; an action unavailable on a projected branch remains unresolved rather than being silently credited as executable.
+
+`applySkillOutcomes` preflights technique/mastery effects, active/resolved and nested buff definitions, trigger kinds, condition kinds/modes, scaling forms and supported expression syntax. Unknown payloads return no certified outcomes, unresolved probability one, and an explanatory reason. Native item plans use the same preflight. This is conservative: an unsupported section can pause a plan even if that section would be inactive this turn. It is not an exhaustive runtime parity proof. Permissive `applySkill`/EV helpers remain estimates; their skipped unknown data cannot be republished as an outcome certificate. Optional null metadata used by older replay transport retains its absent/default meaning.
+
+`OutcomeProjection` again describes the actual item tier and its required bands. Its separate optional `requestedGoals` section carries selected flat targets, band counts, attainment, binding bar and whether a met goal still needs craft resolution. The panel displays selected goals separately, retaining eight-band target visibility without claiming those bands are required for Perfect/Sublime. The automation-facing `targetsMet` still requires actual resolution.
