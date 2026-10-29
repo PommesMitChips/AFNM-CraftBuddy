@@ -107,3 +107,11 @@ Final results for the second round, 2026-10-29:
 - Documentation inventory, link, freshness and authority checks passed. Rust source and its corpus were unchanged in this round; the first-round Rust and historical benchmark results above remain separately scoped evidence.
 
 The immediate-outcome execution gate was retained. No live gameplay/visual validation or installed-mod replacement was performed in this round.
+
+## Third review round (reviewed head 82f64b1)
+
+| Review comment | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 4413441610 | Valid harmony indices 1–5 missing from the regression matrix | Expanded the native harmony-rule matrix from boundary indices 0/6 to every valid index 0–6, across all nine playable harmonies and both equality/inequality operators (126 combinations). Retained the separate invalid-index cases. This changes test coverage only; production behavior and version 6.9.0 are unchanged. |
+
+Validation on 2026-10-29: `prReviewRound2.test.ts` passed all 10 tests, including the expanded 126-combination matrix and retained invalid-index cases. Documentation inventory, link, freshness and authority checks passed. Production files are unchanged from the second-round full-suite/build validation above.

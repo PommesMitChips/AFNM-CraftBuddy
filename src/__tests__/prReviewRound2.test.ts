@@ -240,7 +240,7 @@ describe('installed 0.7.18 native harmony rule indices', () => {
       stabilityCost: 0,
     });
     for (const harmony of HARMONY_TYPES)
-      for (const index of [0, 6])
+      for (const index of [0, 1, 2, 3, 4, 5, 6])
         for (const check of ['==', '!=']) {
           const matches =
             (harmony === HARMONY_TYPES[index]) === (check === '==');
