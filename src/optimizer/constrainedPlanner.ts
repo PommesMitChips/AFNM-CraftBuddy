@@ -27,6 +27,7 @@ import { generatedConditions } from './conditionOutcomes';
 import { projectNativeAutoUseBranches } from './nativeAutoUsePlan';
 import { buildCanonicalNativeVariables } from './nativeVariables';
 import { clampSearchGoalPriorityBias } from '../utils/searchGoalPriority';
+import { isHarmonyType } from './harmonyRegistry';
 
 export interface PlanningValue {
   goalProbabilityLowerBound: number;
@@ -260,8 +261,7 @@ export function constrainedSearch(
   );
   const canProveWaitingInert =
     !config.nativeAutoUsePlan &&
-    !config.isSublimeCraft &&
-    !config.craftingType &&
+    (config.craftingType === undefined || isHarmonyType(config.craftingType)) &&
     !hasDynamicRecoveryDependencies(config.skills) &&
     !(
       [
@@ -285,7 +285,8 @@ export function constrainedSearch(
       before.buffs.size ||
       before.controlBuffTurns ||
       before.intensityBuffTurns ||
-      before.harmonyData ||
+      (before.harmonyData && !isHarmonyType(config.craftingType)) ||
+      hasDynamicRecoveryDependencies(before.harmonyData) ||
       !(
         action.skill.stabilityGain > 0 ||
         action.skill.effects?.some((effect) => effect.kind === 'stability')
@@ -295,6 +296,11 @@ export function constrainedSearch(
     // Compare every modeled field, ignoring only a useless turn and resources
     // that strictly cannot improve. Cooldown progress, buffs, cleansing, item
     // budgets, harmony, and other state changes all keep the action available.
+    // Sublime is a tier/goal flag, not a reason to exempt a no-op. The known
+    // harmony processors use retained subsystem state and action context, not
+    // absolute step/history; their complete data and harmony value remain in
+    // this identity. Cooling, charges, attunement, patterns and releases must
+    // therefore stay available whenever their transition changes that state.
     const identity = (s: CraftingState): string => {
       const nativeVariables = { ...buildCanonicalNativeVariables(s) };
       // Availability propagation may materialize aliases absent at extraction.

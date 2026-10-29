@@ -60,7 +60,7 @@ Revera completed with a neutral/partial result and two additional findings. Its 
 
 | Review comment | Finding | Disposition and evidence |
 | --- | --- | --- |
-| 4412064184 | Inert recovery hides risk beyond the horizon | Added a conservative dominance check in shared node expansion, before recursive/root ranking. For full-bar recovery in a time-independent context, every resolved branch must leave the modeled state unchanged except for a turn and non-improving Qi/stability. Conditions, harmony, native item hooks, active buffs, expressions/callbacks, beneficial cooldown changes, and other state changes prevent pruning. This is a sufficient proof for simple inert recovery, not a claim to detect all dominated actions. Tests cover horizons 1/4/96, useful cooldown waits/buffs, and step-dependent effects. The only productive gamble remains marked risky; pruning waste does not certify it as safe. |
+| 4412064184 | Inert recovery hides risk beyond the horizon | Added a conservative dominance check in shared node expansion, before recursive/root ranking. For full-bar recovery in a time-independent context, every resolved branch must leave the modeled state unchanged except for a turn and non-improving Qi/stability. Native item hooks, active buffs, expressions/callbacks, condition dependencies and beneficial cooldown changes prevent pruning. The initial proof also excluded sublime/harmony states; the independent-review follow-up below replaces that blanket exclusion with complete harmony-state comparison. This is a sufficient proof for simple inert recovery, not a claim to detect all dominated actions. Tests cover horizons 1/4/96, useful cooldown waits/buffs, and step-dependent effects. The only productive gamble remains marked risky; pruning waste does not certify it as safe. |
 | 4412064200 | Goal Priority Bias ignored | Applied the clamped setting only to the secondary average-progress term. The joint minimum progress term and the safety/goal-probability ordering remain ahead of preference. Production-path tests cover -100/0/+100 and ensure a biased unsafe action still loses to a safe continuation. |
 
 The proposed PR version is now **6.9.0** in package metadata, README and the browser harness; this does not rename or replace the already-installed local UAT artifact.
@@ -115,3 +115,28 @@ The immediate-outcome execution gate was retained. No live gameplay/visual valid
 | 4413441610 | Valid harmony indices 1–5 missing from the regression matrix | Expanded the native harmony-rule matrix from boundary indices 0/6 to every valid index 0–6, across all nine playable harmonies and both equality/inequality operators (126 combinations). Retained the separate invalid-index cases. This changes test coverage only; production behavior and version 6.9.0 are unchanged. |
 
 Validation on 2026-10-29: `prReviewRound2.test.ts` passed all 10 tests, including the expanded 126-combination matrix and retained invalid-index cases. Documentation inventory, link, freshness and authority checks passed. Production files are unchanged from the second-round full-suite/build validation above.
+
+## Independent artifact review: sublime recovery loop
+
+The user supplied an independently executed artifact comparison and a machine-readable fixture for a remaining full-bar recovery loop. The archived **6.9.0 / 5158eec** package was rerun with the reviewer's inspected, unmodified extraction and fixture probe scripts. It reproduced **Restore ×5 → Gamble**, consuming 100 Qi without changing stability, progress, buffs or cooldowns. The original 6.8.0 also does so; this is a residual defect, not evidence of a new regression.
+
+The supplied [fixture](../../src/__tests__/fixtures/full-stability-sublime.json) is preserved byte-for-byte (SHA-256 `ab830c5c23994dd0a477cc1b2ed67aafa7bb8750db763db9273583100eff3d36`). It uses 200 Qi, full 60 stability, 100/100 progress, 3,000/3,000 caps, 8/8 requested bands and depth 6. Only the restore and a terminal 50/50 gamble are available. The original probe scripts stay outside the production repository; [the regression suite](../../src/__tests__/sublimeRecovery.test.ts) loads the supplied fixture with matching skill defaults.
+
+### Correction and boundaries
+
+The no-benefit proof no longer rejects a state merely because the craft is sublime or has a known harmony type. It compares the complete harmony value and subsystem state on every evaluated outcome. The known pure harmony processors consume retained subsystem state and action context, not absolute turn/history. Cooling, charges, pattern progress, attunement and charge-release effects keep recovery available whenever they change that state. Unknown harmony types, unidentified harmony data, dynamic dependencies, active buffs, native item hooks and condition dependencies remain outside the proof. Cooldown progress and other modeled changes are still compared. The ranking and execution safety gates are unchanged.
+
+This extends a sufficient no-benefit proof; it does not claim to eliminate every wasted recovery policy. The corrected fixture selects **Gamble immediately at 200 Qi**, explicitly marked risky with 0.5 goal probability. No guaranteed alternative exists in that fixture. Tests also preserve useful forge cooling, Returning Cycle release, evolving harmony states, cooldown/forecast waits, active buff ticks and turn-dependent effects.
+
+### Independent-review follow-up validation
+
+Validated on 2026-10-29:
+
+- The reviewer's inspected, unmodified extractor and fixture runner reproduced five restores before the gamble on the archived 5158eec package. Against the rebuilt package, the same scripts select the gamble immediately. The original 6.8.0 control still performs the five restores.
+- The actual worker strings extracted from both package main bundles independently reproduce the before/after sequence. The corrected worker starts the gamble with **200 Qi**, sets probabilistic-survival risk, and reports goal probability 0.5 / premature-ending probability 0.5. No gamble outcome was sampled to choose the result.
+- **51 Jest suites / 1,118 tests passed** in one complete run. Twenty new cases cover depths 1/6/96, repeated replanning, the sublime flag control, worker partition merging, unchanged Forge/Formless/Decree states, evolving states across the other harmonies, useful cooling and Cycle release, cooldown/forecast waits, buffs, dynamic expressions and unknown harmony implementations.
+- Strict TypeScript and the production build passed at **6.9.0**, with the three existing webpack size warnings. The packaged-worker guaranteed-finish and hidden-PRD uncertainty smoke tests also passed.
+- Seven fixed-budget production replay recommendations and policy metadata stayed identical versus the preceding source. The supplied residual fixture specifically exercises the corrected path.
+- Documentation inventory, link, freshness and authority checks passed. Transition arithmetic, Rust source and the differential corpus were unchanged; prior scoped Rust results above were not rerun or relabeled as a fresh run.
+
+This is executable synthetic/source/artifact validation, not new live-game acceptance. The previously installed mod and preserved comparison archives were not modified.

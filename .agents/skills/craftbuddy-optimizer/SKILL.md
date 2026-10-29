@@ -63,7 +63,7 @@ Use this before touching recommendation behavior. `docs/project/OPTIMIZER_DESIGN
 | Search scoring/order/cache edge | `search.test.ts` |
 | Bands, tiers, auto-finish | `outcome.test.ts`, `outcomeProjection.test.ts` |
 | Requested goals and propagation | `planningGoals.test.ts`, goal/terminal cases in `auditSearch.test.ts` |
-| Stochastic decisions and constrained planning | `stochasticTransitions.test.ts`, `constrainedPlanner.test.ts`, `planningComparator.test.ts`, `nativeAutoUsePlan.test.ts`, `prReviewRegressions.test.ts`, `prReviewRound2.test.ts` |
+| Stochastic decisions and constrained planning | `stochasticTransitions.test.ts`, `constrainedPlanner.test.ts`, `planningComparator.test.ts`, `nativeAutoUsePlan.test.ts`, `prReviewRegressions.test.ts`, `prReviewRound2.test.ts`, `sublimeRecovery.test.ts` |
 | Transition, buffs, masteries, action costs | `skills.test.ts` |
 | Formula or runtime parity | `gameAccuracy.test.ts`, `runtimeParity.test.ts` |
 | Harmony subsystem | `harmony.test.ts`, `harmonyRegistry.test.ts`, plus simulations |
