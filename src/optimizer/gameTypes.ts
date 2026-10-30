@@ -156,6 +156,19 @@ export interface BuffEffect {
  * the block's eqn scope; the two bar triggers add `percentGained`, that one
  * change's share of the recipe with threshold inflation priced in.
  */
+/** Named stack events verified for the current Celadon Cycle payload. */
+export const CELADON_EMBER_NAMES = [
+  'Fusion Ember',
+  'Refinement Ember',
+  'Support Ember',
+  'Stability Ember',
+] as const;
+export function isCeladonStackGainTrigger(
+  value: unknown,
+): value is `stackGained.${(typeof CELADON_EMBER_NAMES)[number]}` {
+  return CELADON_EMBER_NAMES.some((name) => value === `stackGained.${name}`);
+}
+
 export type CraftingBuffTrigger =
   | 'actionFailed'
   | 'poolSpent'
@@ -163,7 +176,8 @@ export type CraftingBuffTrigger =
   | 'stabilitySpent'
   | 'stabilityRestored'
   | 'completionGained'
-  | 'perfectionGained';
+  | 'perfectionGained'
+  | `stackGained.${(typeof CELADON_EMBER_NAMES)[number]}`;
 
 export interface CraftingTriggeredEffectBlock {
   trigger: CraftingBuffTrigger | string;

@@ -38,6 +38,8 @@ import {
   evaluateScaling,
   evalExpression,
   CraftingBuffTrigger,
+  isCeladonStackGainTrigger,
+  CELADON_EMBER_NAMES,
 } from './gameTypes';
 import {
   processHarmonyEffect,
@@ -3996,7 +3998,18 @@ function applySkillTransition(
     stacksDelta: number,
     seedVariables?: ScalingVariables,
   ): void => {
+    const key = normalizeBuffName(definition?.name);
+    const previous = newBuffs.get(key);
     upsertBuffIntoMap(newBuffs, definition, stacksDelta, seedVariables);
+    const trigger = `stackGained.${definition?.name}`;
+    // Native p2 emits the requested positive floor, even at a stack cap, but
+    // does not emit when an existing non-stacking buff ignores the addition.
+    if (
+      stacksDelta >= 1 &&
+      newBuffs.get(key) !== previous &&
+      isCeladonStackGainTrigger(trigger)
+    )
+      dispatchBuffTriggers(trigger, Math.floor(stacksDelta));
   };
 
   const adjustExistingBuffStacks = (
@@ -4008,6 +4021,7 @@ function applySkillTransition(
 
     const delta = Math.floor(stacksDelta);
     if (delta === 0) return;
+    if (delta > 0 && existing.definition?.canStack === false) return;
 
     let nextStacks = existing.stacks + delta;
     const maxStacks = existing.definition?.maxStacks;
@@ -4019,6 +4033,9 @@ function applySkillTransition(
     } else {
       newBuffs.delete(buffKey);
     }
+    const trigger = `stackGained.${existing.definition?.name ?? existing.name}`;
+    if (delta > 0 && isCeladonStackGainTrigger(trigger))
+      dispatchBuffTriggers(trigger, delta);
   };
 
   const actionSuccessChance =
@@ -4046,26 +4063,56 @@ function applySkillTransition(
     trigger: CraftingBuffTrigger,
     amount: number,
     percentGained: number = 0,
+    liveEvent: boolean = isCeladonStackGainTrigger(trigger),
   ): void => {
     if (
       !Number.isFinite(amount) ||
-      (amount <= 0 && trigger !== 'actionFailed')
+      amount < 0 ||
+      (amount === 0 && trigger !== 'actionFailed' && !liveEvent)
     ) {
       return;
     }
-    for (const [buffKey, buff] of Array.from(newBuffs.entries())) {
-      const blocks = buff.definition?.triggeredEffects;
+    for (const [buffKey] of Array.from(newBuffs.entries())) {
+      const buff = newBuffs.get(buffKey);
+      if (!buff || buff.stacks <= 0) continue;
+      const blocks = buff.definition?.triggeredEffects?.filter(
+        (block) => block.trigger === trigger,
+      );
       if (!blocks || blocks.length === 0) {
         continue;
       }
       const guardKey = `${trigger}:${buffKey}`;
       if (activeTriggers.has(guardKey)) continue;
       activeTriggers.add(guardKey);
+      // PF is recomputed when the event fires. The fourth Ember must already
+      // be visible. Keep this captured scope for the whole payout/removal block.
+      const eventVariables = liveEvent
+        ? getCraftingActionVariables(
+            state.copy({
+              buffs: newBuffs,
+              qi: newQi + techniquePoolDelta + buffPoolDelta,
+              stability: newStability + buffStabilityDelta,
+              stabilityPenalty: newStabilityPenalty,
+              completion: runningCompletion,
+              perfection: runningPerfection,
+            }),
+            config,
+            conditionEffects,
+          )
+        : actionVars;
+      if (liveEvent) {
+        qiCap = Math.max(1, eventVariables.maxpool);
+        // Native op() preserves case while replacing non-word characters.
+        // Rebuild all four aliases so consumed embers cannot leave stale ones.
+        for (const name of CELADON_EMBER_NAMES)
+          eventVariables[name.replace(/[^\w]/g, '_')] =
+            newBuffs.get(normalizeBuffName(name))?.stacks ?? 0;
+      }
       const scope: ScalingVariables = {
-        ...actionVars,
+        ...eventVariables,
         roomEffectiveness: 0,
-        pool: newQi,
-        maxpool: qiCap,
+        pool: liveEvent ? eventVariables.pool : newQi,
+        maxpool: liveEvent ? eventVariables.maxpool : qiCap,
         toxicity: newToxicity,
         maxtoxicity: config.maxToxicity || 0,
         ...buff.definition?.additionalVariables,
@@ -4075,11 +4122,9 @@ function applySkillTransition(
         percentGained,
       };
       for (const block of blocks) {
-        if (block.trigger !== trigger) {
-          continue;
-        }
         for (const effect of block.effects ?? []) {
-          if (effect) executeBuffEffect(effect, buffKey, buff, scope);
+          if (effect)
+            executeBuffEffect(effect, buffKey, buff, scope, liveEvent);
         }
       }
       activeTriggers.delete(guardKey);
@@ -4088,6 +4133,212 @@ function applySkillTransition(
 
   let techniquePoolDelta = 0;
   let techniqueMaxStabilityDelta = 0;
+  let buffInvocation = 0;
+  const executeBuffEffect = (
+    effect: BuffEffect,
+    ownerBuffKey: string,
+    ownerBuff: { name: string; stacks: number; definition?: BuffDefinition },
+    scalingVars: ScalingVariables,
+    liveEvent = false,
+  ): void => {
+    const liveOwner = newBuffs.get(ownerBuffKey);
+    if (!liveOwner) return;
+    Object.assign(
+      scalingVars,
+      { roomEffectiveness: 0 },
+      liveOwner.definition?.additionalVariables,
+      liveOwner.internalState,
+      { stacks: liveOwner.stacks },
+    );
+    const conditionResult = realizedCondition(
+      effect.condition,
+      state,
+      scalingVars,
+      liveOwner.stacks,
+      phase.resolveChance,
+      'buff:' + ownerBuffKey + ':' + buffInvocation++,
+    );
+    if (!conditionResult.met || conditionResult.probability <= 0) {
+      return;
+    }
+    const conditionFactor = conditionResult.probability;
+    // 0.7.10: the runtime pipes every bar/resource application through
+    // appliers that scale positive amounts by the matching boost stat
+    // (completionBoost / perfectionBoost / stabilityBoost / qiBoost).
+    const rawAmount =
+      evaluateScalingWithMasteryUpgrades(
+        effect.amount,
+        actionMasteryUpgrades,
+        scalingVars,
+        0,
+      ) * conditionFactor;
+    const boostForKind =
+      effect.kind === 'completion'
+        ? scalingVars.completionBoost
+        : effect.kind === 'perfection'
+          ? scalingVars.perfectionBoost
+          : effect.kind === 'stability'
+            ? scalingVars.stabilityBoost
+            : effect.kind === 'pool'
+              ? scalingVars.qiBoost
+              : 0;
+    const amount = applyGainBoost(rawAmount, boostForKind);
+    switch (effect.kind) {
+      case 'completion':
+        buffCompletion += amount;
+        if (recordBarChanges && amount !== 0) {
+          buffBarContributions.push({ bar: 'completion', amount });
+        }
+        // Buff bar applications fire the same runtime triggers as technique
+        // applications (e.g. Illume Crucible's onStabilize completion feeds
+        // True Bifang Flame's blaze).
+        if (triggerBuffsPresent && amount > 0) {
+          const barAfter = runningCompletion + amount;
+          runningCompletion = barAfter;
+          dispatchBuffTriggers(
+            'completionGained',
+            amount,
+            computeTriggerPercentGained(amount, barAfter, targetCompletion),
+            liveEvent,
+          );
+        }
+        break;
+      case 'perfection':
+        buffPerfection += amount;
+        if (recordBarChanges && amount !== 0) {
+          buffBarContributions.push({ bar: 'perfection', amount });
+        }
+        if (triggerBuffsPresent && amount > 0) {
+          const barAfter = runningPerfection + amount;
+          runningPerfection = barAfter;
+          dispatchBuffTriggers(
+            'perfectionGained',
+            amount,
+            computeTriggerPercentGained(amount, barAfter, targetPerfection),
+            liveEvent,
+          );
+        }
+        break;
+      case 'stability':
+        buffStabilityDelta += amount;
+        if (triggerBuffsPresent && amount !== 0) {
+          dispatchBuffTriggers(
+            amount > 0 ? 'stabilityRestored' : 'stabilitySpent',
+            Math.abs(amount),
+            0,
+            liveEvent,
+          );
+        }
+        break;
+      case 'pool':
+        if (liveEvent) {
+          // Native WLc caps each payout before publishing its actual delta.
+          // Preserve that delta (including zero at cap) for downstream hooks.
+          const before = newQi + techniquePoolDelta + buffPoolDelta;
+          const after = Math.max(
+            0,
+            Math.min(scalingVars.maxpool, before + amount),
+          );
+          const delta = after - before;
+          buffPoolDelta += delta;
+          dispatchBuffTriggers(
+            amount >= 0 ? 'poolRestored' : 'poolSpent',
+            amount >= 0 ? delta : -delta,
+            0,
+            true,
+          );
+          break;
+        }
+        buffPoolDelta += amount;
+        if (triggerBuffsPresent && amount !== 0) {
+          dispatchBuffTriggers(
+            amount > 0 ? 'poolRestored' : 'poolSpent',
+            Math.abs(amount),
+          );
+        }
+        break;
+      case 'maxStability':
+        buffMaxStabilityDelta += amount;
+        break;
+      case 'changeToxicity':
+        // Runtime `changeToxicity` does `stats.toxicity -= amount`: a positive
+        // amount cleanses toxicity, a negative amount inflicts it.
+        buffToxicityDelta -= amount;
+        break;
+      case 'negate':
+        newBuffs.delete(ownerBuffKey);
+        break;
+      case 'createBuff': {
+        const stacksToAdd =
+          evaluateScalingWithMasteryUpgrades(
+            effect.stacks,
+            actionMasteryUpgrades,
+            scalingVars,
+            1,
+          ) * conditionFactor;
+        // Buff createBuff with a negative amount calls native f2 (consume),
+        // which removes even non-stacking embers. Positive amounts call p2.
+        if (stacksToAdd < 0)
+          adjustExistingBuffStacks(
+            normalizeBuffName(effect.buff?.name),
+            -Math.floor(-stacksToAdd),
+          );
+        else upsertBuffFromDefinition(effect.buff, stacksToAdd, scalingVars);
+        break;
+      }
+      case 'addStack': {
+        const stackChange =
+          evaluateScalingWithMasteryUpgrades(
+            effect.stacks,
+            actionMasteryUpgrades,
+            scalingVars,
+            1,
+          ) * conditionFactor;
+        if (stackChange !== 0) {
+          adjustExistingBuffStacks(ownerBuffKey, stackChange);
+        }
+        break;
+      }
+      case 'setState': {
+        // 0.7.7+ per-instance state writes (Azure Depths' per-action
+        // `stored = max(0, stored - 1)` decay lives in `effects`).
+        const stateKey = effect.key;
+        if (!stateKey) break;
+        const stateValue = evaluateScalingWithMasteryUpgrades(
+          effect.value,
+          actionMasteryUpgrades,
+          scalingVars,
+          0,
+        );
+        if (!Number.isFinite(stateValue)) break;
+        const owner = newBuffs.get(ownerBuffKey);
+        if (!owner) break;
+        const nextInternalState: Record<string, number> = {
+          ...(owner.internalState ?? {}),
+        };
+        const previousValue = nextInternalState[stateKey] ?? 0;
+        nextInternalState[stateKey] =
+          effect.mode === 'add' ? previousValue + stateValue : stateValue;
+        for (const key of effect.keys ?? []) {
+          nextInternalState[key] =
+            effect.mode === 'add'
+              ? (nextInternalState[stateKey] ?? 0) + stateValue
+              : stateValue;
+        }
+        scalingVars[stateKey] = nextInternalState[stateKey];
+        // The runtime iterates indexes here, not the key values.
+        for (const index of Object.keys(effect.keys ?? [])) {
+          scalingVars[index] = nextInternalState[index] ?? 0;
+        }
+        newBuffs.set(ownerBuffKey, {
+          ...owner,
+          internalState: nextInternalState,
+        });
+        break;
+      }
+    }
+  };
+
   if (actionSuccessChance > 0 && skill.effects && skill.effects.length > 0) {
     for (const [effectIndex, effect] of skill.effects.map(
       (effect, i) => [i, effect] as const,
@@ -4160,182 +4411,6 @@ function applySkillTransition(
       }
     }
   }
-
-  let buffInvocation = 0;
-  const executeBuffEffect = (
-    effect: BuffEffect,
-    ownerBuffKey: string,
-    ownerBuff: { name: string; stacks: number; definition?: BuffDefinition },
-    scalingVars: ScalingVariables,
-  ): void => {
-    const liveOwner = newBuffs.get(ownerBuffKey);
-    if (!liveOwner) return;
-    Object.assign(
-      scalingVars,
-      { roomEffectiveness: 0 },
-      liveOwner.definition?.additionalVariables,
-      liveOwner.internalState,
-      { stacks: liveOwner.stacks },
-    );
-    const conditionResult = realizedCondition(
-      effect.condition,
-      state,
-      scalingVars,
-      liveOwner.stacks,
-      phase.resolveChance,
-      'buff:' + ownerBuffKey + ':' + buffInvocation++,
-    );
-    if (!conditionResult.met || conditionResult.probability <= 0) {
-      return;
-    }
-    const conditionFactor = conditionResult.probability;
-    // 0.7.10: the runtime pipes every bar/resource application through
-    // appliers that scale positive amounts by the matching boost stat
-    // (completionBoost / perfectionBoost / stabilityBoost / qiBoost).
-    const rawAmount =
-      evaluateScalingWithMasteryUpgrades(
-        effect.amount,
-        actionMasteryUpgrades,
-        scalingVars,
-        0,
-      ) * conditionFactor;
-    const boostForKind =
-      effect.kind === 'completion'
-        ? scalingVars.completionBoost
-        : effect.kind === 'perfection'
-          ? scalingVars.perfectionBoost
-          : effect.kind === 'stability'
-            ? scalingVars.stabilityBoost
-            : effect.kind === 'pool'
-              ? scalingVars.qiBoost
-              : 0;
-    const amount = applyGainBoost(rawAmount, boostForKind);
-    switch (effect.kind) {
-      case 'completion':
-        buffCompletion += amount;
-        if (recordBarChanges && amount !== 0) {
-          buffBarContributions.push({ bar: 'completion', amount });
-        }
-        // Buff bar applications fire the same runtime triggers as technique
-        // applications (e.g. Illume Crucible's onStabilize completion feeds
-        // True Bifang Flame's blaze).
-        if (triggerBuffsPresent && amount > 0) {
-          const barAfter = runningCompletion + amount;
-          runningCompletion = barAfter;
-          dispatchBuffTriggers(
-            'completionGained',
-            amount,
-            computeTriggerPercentGained(amount, barAfter, targetCompletion),
-          );
-        }
-        break;
-      case 'perfection':
-        buffPerfection += amount;
-        if (recordBarChanges && amount !== 0) {
-          buffBarContributions.push({ bar: 'perfection', amount });
-        }
-        if (triggerBuffsPresent && amount > 0) {
-          const barAfter = runningPerfection + amount;
-          runningPerfection = barAfter;
-          dispatchBuffTriggers(
-            'perfectionGained',
-            amount,
-            computeTriggerPercentGained(amount, barAfter, targetPerfection),
-          );
-        }
-        break;
-      case 'stability':
-        buffStabilityDelta += amount;
-        if (triggerBuffsPresent && amount !== 0) {
-          dispatchBuffTriggers(
-            amount > 0 ? 'stabilityRestored' : 'stabilitySpent',
-            Math.abs(amount),
-          );
-        }
-        break;
-      case 'pool':
-        buffPoolDelta += amount;
-        if (triggerBuffsPresent && amount !== 0) {
-          dispatchBuffTriggers(
-            amount > 0 ? 'poolRestored' : 'poolSpent',
-            Math.abs(amount),
-          );
-        }
-        break;
-      case 'maxStability':
-        buffMaxStabilityDelta += amount;
-        break;
-      case 'changeToxicity':
-        // Runtime `changeToxicity` does `stats.toxicity -= amount`: a positive
-        // amount cleanses toxicity, a negative amount inflicts it.
-        buffToxicityDelta -= amount;
-        break;
-      case 'negate':
-        newBuffs.delete(ownerBuffKey);
-        break;
-      case 'createBuff': {
-        const stacksToAdd =
-          evaluateScalingWithMasteryUpgrades(
-            effect.stacks,
-            actionMasteryUpgrades,
-            scalingVars,
-            1,
-          ) * conditionFactor;
-        upsertBuffFromDefinition(effect.buff, stacksToAdd, scalingVars);
-        break;
-      }
-      case 'addStack': {
-        const stackChange =
-          evaluateScalingWithMasteryUpgrades(
-            effect.stacks,
-            actionMasteryUpgrades,
-            scalingVars,
-            1,
-          ) * conditionFactor;
-        if (stackChange !== 0) {
-          adjustExistingBuffStacks(ownerBuffKey, stackChange);
-        }
-        break;
-      }
-      case 'setState': {
-        // 0.7.7+ per-instance state writes (Azure Depths' per-action
-        // `stored = max(0, stored - 1)` decay lives in `effects`).
-        const stateKey = effect.key;
-        if (!stateKey) break;
-        const stateValue = evaluateScalingWithMasteryUpgrades(
-          effect.value,
-          actionMasteryUpgrades,
-          scalingVars,
-          0,
-        );
-        if (!Number.isFinite(stateValue)) break;
-        const owner = newBuffs.get(ownerBuffKey);
-        if (!owner) break;
-        const nextInternalState: Record<string, number> = {
-          ...(owner.internalState ?? {}),
-        };
-        const previousValue = nextInternalState[stateKey] ?? 0;
-        nextInternalState[stateKey] =
-          effect.mode === 'add' ? previousValue + stateValue : stateValue;
-        for (const key of effect.keys ?? []) {
-          nextInternalState[key] =
-            effect.mode === 'add'
-              ? (nextInternalState[stateKey] ?? 0) + stateValue
-              : stateValue;
-        }
-        scalingVars[stateKey] = nextInternalState[stateKey];
-        // The runtime iterates indexes here, not the key values.
-        for (const index of Object.keys(effect.keys ?? [])) {
-          scalingVars[index] = nextInternalState[index] ?? 0;
-        }
-        newBuffs.set(ownerBuffKey, {
-          ...owner,
-          internalState: nextInternalState,
-        });
-        break;
-      }
-    }
-  };
 
   // Fire the cost/technique triggers before per-turn buff effects run,
   // matching the runtime order (costs, technique effects, then buff effects).

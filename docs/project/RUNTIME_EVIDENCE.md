@@ -1635,3 +1635,31 @@ repair. `prdGuaranteedCarry.test.ts` now covers known/unknown preservation,
 policy uncertainty, real probability-one trials, zero-chance trials and an
 immediately guaranteed finish. This is scoped source/artifact evidence, not
 live-game sampling.
+
+### Celadon Cycle stack events and consumption
+
+The installed artifact was rechecked as **0.7.18-97c093b**. Flickering Celadon
+Flame's `Celadon Cycle` creates Fusion, Refinement, Support and Stability Ember
+from its four action-type blocks. Embers are non-stacking, capped at one. Each
+named stack-gain listener checks all four native aliases, restores 0.1 times
+maximum Qi and 10 stability, then applies four negative createBuff effects.
+
+The native `op` alias helper preserves case (`Fusion_Ember`, not merely a
+lowercase optimizer key). `p2` emits stackGained after an accepted positive
+addition, but not when an existing non-stacking buff ignores it. `XLc` routes
+negative buff createBuff amounts through `f2`, which consumes non-stacking buffs
+too. The trigger dispatcher recomputes `PF` for each matching owner and guards
+re-entry by event/owner. Its captured variable frame remains in use across the
+whole effect list. `WLc` publishes actual capped pool restoration, including
+zero, while `RLc` retains stability overdraft until end-of-action cleanup.
+`gRc` executes action-type buffs after either success or failure.
+
+An isolated comparison loaded the actual native Celadon definition plus native
+stack appliers, trigger dispatcher, buff executor and resource appliers from
+the extracted artifact. **96 comparisons passed** across all 24 action orders,
+one/two cycles and boosted/unboosted payouts. Stat frames and expression
+plumbing were isolated to this tested payload; this is not full-game execution.
+Source tests additionally cover repeated embers, chance branches, caps, low
+stability, current maximum Qi, downstream triggers and nested-event guards.
+The historical Rust corpus is unchanged and does not establish Celadon parity;
+the production TypeScript worker is the authority for this new support.

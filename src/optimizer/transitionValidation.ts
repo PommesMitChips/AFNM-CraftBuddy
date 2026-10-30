@@ -1,4 +1,8 @@
-import { isSupportedCraftingExpression } from './gameTypes';
+import {
+  isSupportedCraftingExpression,
+  isCeladonStackGainTrigger,
+  CELADON_EMBER_NAMES,
+} from './gameTypes';
 import { unsupportedNativeTechnique } from './nativeAvailability';
 import { normalizeIdentifier } from './nameNormalization';
 
@@ -90,6 +94,58 @@ function list(value: unknown, label: string): unknown[] {
 function expression(value: unknown): void {
   if (!isSupportedCraftingExpression(value))
     fail('Unsupported crafting expression');
+}
+
+/** Do not license arbitrary stack-event programs. This verified block reads
+ * only the captured Ember counts, maximum Qi and literal payout values. */
+function celadonBlock(value: unknown): void {
+  const effects = list(value, 'Celadon effects');
+  if (effects.length !== 6) fail('Unsupported Celadon stack-trigger block');
+  const expectedCondition = CELADON_EMBER_NAMES.map(
+    (name) => `${name.replace(/[^\w]/g, '_')}>=1`,
+  ).join('&&');
+  const seen = new Set<string>();
+  effects.forEach((value, index) => {
+    const e = record(value, 'Celadon effect');
+    const c = record(e.condition, 'Celadon condition');
+    if (
+      c.kind !== 'condition' ||
+      typeof c.condition !== 'string' ||
+      c.condition.replace(/\band\b/g, '&&').replace(/\s/g, '') !==
+        expectedCondition
+    )
+      fail('Unsupported Celadon stack-trigger condition');
+    const scaling = record(index < 2 ? e.amount : e.stacks, 'Celadon scaling');
+    finite(scaling.value, 'Celadon scaling');
+    if (index < 2 && (scaling.value as number) < 0)
+      fail('Unsupported negative Celadon payout');
+    if (
+      Object.entries(scaling).some(
+        ([key, value]) => value != null && !['value', 'stat'].includes(key),
+      )
+    )
+      fail('Unsupported Celadon stack-trigger scaling');
+    if (index === 0) {
+      if (e.kind !== 'pool' || scaling.stat !== 'maxpool')
+        fail('Unsupported Celadon Qi payout');
+    } else if (index === 1) {
+      if (e.kind !== 'stability' || scaling.stat != null)
+        fail('Unsupported Celadon stability payout');
+    } else {
+      const b = record(e.buff, 'Celadon ember');
+      if (
+        e.kind !== 'createBuff' ||
+        scaling.value !== -1 ||
+        scaling.stat != null ||
+        !CELADON_EMBER_NAMES.includes(
+          b.name as (typeof CELADON_EMBER_NAMES)[number],
+        ) ||
+        seen.has(String(b.name))
+      )
+        fail('Unsupported Celadon ember consumption');
+      seen.add(String(b.name));
+    }
+  });
 }
 
 /** Conservative schema preflight for certificates, never for legacy EV previews.
@@ -223,7 +279,8 @@ export function findUnsupportedCraftingPayload(
       for (const e of list(b[key], key)) effect(e, true, depth + 1);
     for (const value of list(b.triggeredEffects, 'triggered effects')) {
       const block = record(value, 'trigger');
-      if (!triggerKinds.has(String(block.trigger)))
+      if (isCeladonStackGainTrigger(block.trigger)) celadonBlock(block.effects);
+      else if (!triggerKinds.has(String(block.trigger)))
         fail(`Unsupported crafting trigger: ${String(block.trigger)}`);
       for (const e of list(block.effects, 'trigger effects'))
         effect(e, true, depth + 1);
