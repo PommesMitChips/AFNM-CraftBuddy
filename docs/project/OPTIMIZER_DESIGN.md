@@ -102,6 +102,8 @@ This is not an unbounded global optimality claim. Time, node and horizon budgets
 
 Worker partitions filter starting actions before validation, availability and transition expansion, so another partition's actions cannot consume their root budget. Deeper continuations still use the full skill roster. Root expansion does not populate the continuation cache with a restricted or partial action list. `rootEvaluation` records whether root enumeration finished and the keys of completed eligible action evaluations (including unresolved or pruned actions); replay output retains that diagnostic evidence. If any partition exhausts its root budget, the merged result stays paused with no actionable candidate, alternatives or final-state preview. Completed partial evaluations do not establish a ranking over unevaluated roots. This coverage flag is separate from continuation probability uncertainty, and partitioned searches with different total effort need not produce identical deeper policies.
 
+Merged coverage keys and blocked diagnostics have a canonical order independent of worker completion timing. Diagnostics are deduplicated and sorted by the full reason/name/details tuple, preserving distinct explanations. This ordering affects presentation and replay output only, not policy ranking or the incomplete-coverage pause.
+
 ### Probability handling
 
 Technique success, critical rolls and supported chance-conditioned effects are action branches. They are not converted into fractional progress, restoration or persistent buff state before terminal rules are applied. Bounded enumeration retains unresolved mass explicitly, without renormalizing the explored subset into certainty.

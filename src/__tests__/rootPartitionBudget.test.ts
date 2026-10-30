@@ -7,6 +7,7 @@ import {
 import { retargetConfig, retargetSkill } from './fixtures/runtime0717';
 import { celadonCycle, embers } from './fixtures/celadonCycle';
 import { buildResultSnapshot } from '../modContent/replaySnapshot';
+import type { SearchResult } from '../optimizer';
 
 const finish = (key: string, successChance = 1) =>
   retargetSkill({
@@ -88,7 +89,7 @@ test('explicit incomplete coverage pauses a merge even without a diagnostic stri
   expect(merged.recommendation).toBeNull();
   expect(merged.rootEvaluation).toEqual({
     complete: false,
-    evaluatedSkillKeys: ['second', 'first'],
+    evaluatedSkillKeys: ['first', 'second'],
   });
   expect(merged.blockedReasons?.some((r) => r.reason === 'budget')).toBe(true);
 });
@@ -196,3 +197,71 @@ test('Celadon’s fourth-ember safe finish remains available in a late single-no
   expect(result.expectedFinalState?.stability).toBe(1);
   expect(result.recommendation?.projectedSuccessChance).toBe(1);
 });
+
+test.each([false, true])(
+  'merged diagnostics are independent of worker arrival order (incomplete: %s)',
+  (incomplete) => {
+    const qi = {
+      skillName: 'Alpha',
+      reason: 'qi' as const,
+      details: 'Need Qi',
+    };
+    const otherQi = { ...qi, details: 'Need more Qi' };
+    const stability = { ...qi, reason: 'stability' as const };
+    const otherSkill = { ...qi, skillName: 'Beta' };
+    const base = run([]);
+    const partials: SearchResult[] = [
+      {
+        ...base,
+        rootEvaluation: {
+          complete: !incomplete,
+          evaluatedSkillKeys: ['third', 'first'],
+        },
+        blockedReasons: [otherSkill, qi],
+      },
+      {
+        ...base,
+        rootEvaluation: {
+          complete: true,
+          evaluatedSkillKeys: ['second', 'first'],
+        },
+        blockedReasons: [stability, otherQi],
+      },
+      {
+        ...base,
+        rootEvaluation: { complete: true, evaluatedSkillKeys: ['last'] },
+        blockedReasons: [qi, otherSkill],
+      },
+    ];
+    const before = JSON.stringify(partials);
+    const permutations = [
+      [0, 1, 2],
+      [0, 2, 1],
+      [1, 0, 2],
+      [1, 2, 0],
+      [2, 0, 1],
+      [2, 1, 0],
+    ];
+    const expected = mergePartitionedResults(partials);
+    expect(expected.rootEvaluation).toEqual({
+      complete: !incomplete,
+      evaluatedSkillKeys: ['first', 'last', 'second', 'third'],
+    });
+    expect(expected.blockedReasons).toHaveLength(incomplete ? 5 : 4);
+    expect(expected.blockedReasons).toEqual(
+      expect.arrayContaining([qi, otherQi, stability, otherSkill]),
+    );
+    for (const order of permutations) {
+      const result = mergePartitionedResults(order.map((i) => partials[i]));
+      expect(buildResultSnapshot(result)).toEqual(
+        buildResultSnapshot(expected),
+      );
+      expect(result.recommendation).toBeNull();
+      expect(result.alternativeSkills).toEqual([]);
+      expect(
+        result.blockedReasons?.some((reason) => reason.reason === 'budget'),
+      ).toBe(incomplete);
+    }
+    expect(JSON.stringify(partials)).toBe(before);
+  },
+);

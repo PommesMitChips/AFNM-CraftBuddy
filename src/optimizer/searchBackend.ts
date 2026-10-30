@@ -345,7 +345,7 @@ export function mergePartitionedResults(
                 (partial) => partial.rootEvaluation?.evaluatedSkillKeys ?? [],
               ),
             ),
-          ),
+          ).sort(),
         }
       : undefined;
 
@@ -426,8 +426,10 @@ export function mergePartitionedResults(
               JSON.stringify([reason.reason, reason.skillName, reason.details]),
               reason,
             ]),
-          ).values(),
-        ),
+          ).entries(),
+        )
+          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+          .map(([, reason]) => reason),
     optimalRotation: incompleteRoot
       ? undefined
       : referencePartial?.optimalRotation,

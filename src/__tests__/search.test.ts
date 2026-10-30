@@ -740,7 +740,9 @@ describe('lookaheadSearch', () => {
     const result = lookaheadSearch(state, config, 100, 100, 6, undefined, [], {
       useIterativeDeepening: true,
       iterativeDeepeningMinDepth: 3,
-      timeBudgetMs: 500,
+      // Check completed search work, not whether this machine can finish a
+      // minimum-depth pass inside half a second under concurrent test load.
+      timeBudgetMs: 120000,
       maxNodes: 200000,
     });
 

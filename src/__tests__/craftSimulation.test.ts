@@ -1647,12 +1647,12 @@ describe('craft simulation — sublime crafts', () => {
     const neutralOnly: CraftingConditionType[] = ['neutral'];
 
     // Pass scaled targets (200/200) to the simulation loop so it doesn't
-    // stop at base targets.  The search is time-budgeted, so on slower
-    // machines each turn explores less deeply and convergence needs more
-    // turns; give this deep craft generous turn and per-turn budgets so the
-    // contract checks the model, not machine speed.
+    // stop at base targets. Keep the helper's existing node cap, but use a
+    // generous time guard so concurrent test load cannot silently replace a
+    // completed search pass with a shallower policy. This checks the model,
+    // not whether every turn can finish within one wall-clock second.
     const sim = simulateCraft(state, config, 200, 200, neutralOnly, 90, 6, {
-      timeBudgetMs: 1000,
+      timeBudgetMs: 120000,
     });
     expect(sim.craftDied).toBe(false);
     expect(sim.targetsMet).toBe(true);

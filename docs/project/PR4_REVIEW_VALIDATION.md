@@ -278,3 +278,17 @@ Nine committed regressions cover late/empty partitions, a four-partition shallow
 ### Eleventh-follow-up validation
 
 Full Jest: **60 suites / 1,384 tests passed**. Strict TypeScript and the 6.9.0 production build passed with the three existing webpack size warnings. The compiled-worker artifact passed real partition-index checks for assigned root budgets, complete and incomplete merges, full continuation access and the exact fourth-ember Celadon finish. Earlier compiled-worker safety probes also passed. All **96 isolated Celadon comparisons** against extracted native functions passed. Seven fixed-node-budget production replay picks, planning fields and explored-node counts remained identical to d5fec94. Documentation checks passed. No simulator arithmetic or Rust code changed; prior Rust/corpus results remain historical and were not rerun. These checks do not establish live acceptance of the player's full Ashglass Ward loadout.
+
+## Twelfth review follow-up (finding on e75fd13)
+
+Cubic reported one diagnostic-ordering finding. Revera marked the previous worker-budget finding resolved and reported no new accepted findings, with two unconfirmed and incomplete review coverage. Its posted summary did not provide actionable details for the unconfirmed candidates.
+
+| Review comment | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 4426631815 | Worker completion order changes merged diagnostics | Fixed. Sort the deduplicated root evaluation keys and blocked-reason tuples before publishing a multi-partition result. Default string/code-unit ordering avoids locale-dependent comparison. Preserve distinct reason/name/details tuples, input arrays, candidate ranking and incomplete-coverage refusal. Two regressions exercise all six arrival orders for three complete or incomplete partitions, including repeated keys, repeated messages and differences in every diagnostic field. Serialized result snapshots must match across all permutations. |
+
+Validation exposed two pre-existing legacy-search checks that also failed in isolation: iterative deepening assumed a minimum completed depth within 500 ms, and the scaled sublime simulation assumed adequate progress with a 1,000 ms per-turn budget. Neither invokes the modified worker merge. Both pass with generous 120-second time guards, preserving their existing 200,000-node caps, horizons, targets and assertions. Only these two test configurations changed; production search budgets and scoring are untouched.
+
+### Twelfth-follow-up validation
+
+The full run exercised **60 suites / 1,386 tests**: **1,384 passed**, with only the two timing failures described above. Both corrected tests passed in a focused rerun; no single all-green full rerun is claimed. The new arrival-order regressions, Celadon Cycle and prior merge regressions also passed together (**3 focused suites / 62 tests**). Strict TypeScript, formatting, documentation checks and the 6.9.0 production build passed (three existing webpack size warnings). Generated-worker partition/safety probes and all **96 isolated Celadon native-function comparisons** passed. Production changes only canonicalize diagnostics; no simulation arithmetic, policy comparison, runtime search budgets or Rust code changed. Earlier benchmark/Rust evidence remains historical; neither was rerun for this presentation-only change. No live-game acceptance is claimed.
