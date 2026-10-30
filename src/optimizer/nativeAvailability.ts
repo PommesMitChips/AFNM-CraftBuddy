@@ -71,8 +71,13 @@ export function unsupportedNativeTechnique(value: unknown): string | undefined {
     'toxicityCost',
     'currentCooldown',
     'poolCost',
+    'successChance',
+    'stabilityCost',
+    'cooldown',
   ])
-    if (value[key] != null && !finite(value[key]))
+    // Explicit null is not an omitted field: JSON converts NaN/Infinity to
+    // null, so accepting it would launder malformed replay/worker payloads.
+    if (value[key] !== undefined && !finite(value[key]))
       return `Unsupported native availability field: ${key}`;
   if (
     value.conditionRequirement != null &&

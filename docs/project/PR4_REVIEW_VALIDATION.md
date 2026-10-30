@@ -213,3 +213,13 @@ Both auditors independently rechecked the applied repair and preview interaction
 ### Seventh-follow-up validation
 
 Full Jest: **56 suites / 1,214 tests passed**. Strict TypeScript and production build passed at 6.9.0 with the three existing webpack size warnings. Rust: **94 passed, 3 profiling tests ignored**; regenerated differential data remained unchanged (178 scenarios / 1,555 transitions). Compiled-worker checks cover final preview, hidden/known PRD carry-over and the preceding safety regressions. Seven fixed-budget replay picks and planning metrics remained identical to 8162df4. Documentation checks passed. No new live-game/visual acceptance is claimed, and the installed 8162df4 package remains unchanged.
+
+## Eighth review follow-up (finding on bcdaa30)
+
+| Review comment | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 4423250996 | Malformed native numeric fields | Fixed. successChance, stabilityCost and cooldown now join the existing five numeric native fields in the finite-number check. All eight reject explicit null as well: JSON turns NaN/Infinity into null, so treating it as omitted could bypass certification after replay/worker transport. Omitted/undefined fields and finite zero values retain their existing behavior. Related buffCost/buffRequirement amounts and maxStacks already had finite checks; regression coverage now includes them. Tests exercise the actual technique extractor, unresolved distributions/blocked recommendations, JSON replay and worker transport, valid 0/0.5/1 success chances, and an invalid unused alternative alongside a valid action. Valid-input scoring, probability normalization and safety ordering are unchanged. |
+
+### Eighth-follow-up validation
+
+Full Jest: **57 suites / 1,299 tests passed**, including 85 new numeric-boundary cases. Strict TypeScript and production build passed at 6.9.0 with the three existing webpack size warnings. The compiled worker rejects malformed values across all eight native numeric fields, and prior PRD carry, hidden uncertainty, cache identity, missing harmony, final-preview and guaranteed-finish checks pass. Seven fixed-budget replay picks and planning metrics remain identical to bcdaa30. Documentation checks passed. Rust arithmetic and differential data are unchanged; the previously recorded Rust results were not rerun for this validation-only boundary change. No new live-game acceptance is claimed; the installed 8162df4 package is unchanged.
