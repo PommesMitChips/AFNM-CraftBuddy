@@ -781,12 +781,50 @@ export function constrainedSearch(
     rotation.push(cursor.action.skill);
     cursor = cursor.next!;
   }
+  // Preview only an actual, completely resolved deterministic continuation.
+  // `next` follows the most-likely branch for rotation display; it is not a
+  // probabilistic final-state expectation or a substitute for policy bounds.
+  const finalPreview = (): SearchResult['expectedFinalState'] => {
+    const best = policies[0];
+    if (
+      !best ||
+      best.value.unresolvedProbability > 0 ||
+      best.value.probabilityUncertain
+    )
+      return undefined;
+    let policy: Policy | undefined = best;
+    let final = state;
+    let steps = 0;
+    while (policy?.action && steps++ < horizon) {
+      const action = policy.action;
+      if (
+        action.unresolved > 0 ||
+        action.uncertain ||
+        action.children.length !== 1 ||
+        action.children[0].probability !== 1
+      )
+        return undefined;
+      final = action.children[0].state;
+      policy = policy.next;
+    }
+    if (!ended(final)) return undefined;
+    return {
+      completion: final.completion,
+      perfection: final.perfection,
+      stability: final.stability,
+      maxStability: final.maxStability,
+      qi: final.qi,
+      turnsRemaining: 0,
+      projectedSuccessChance: best.value.goalProbabilityLowerBound,
+    };
+  };
   return {
     recommendation: recommendations[0] ?? null,
     alternativeSkills: recommendations.slice(1),
     isTerminal: ended(state),
     targetsMet: reached(state),
     outcomeProjection: projection,
+    expectedFinalState: finalPreview(),
     optimalRotation: rotation.map((s) => s.name),
     optimalRotationLabels: rotation.map(techniqueDisplayName),
     blockedReasons: recommendations.length

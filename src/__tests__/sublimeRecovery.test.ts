@@ -158,7 +158,9 @@ describe('independent reviewer sublime recovery counterexample', () => {
           craftingType === 'formless'
             ? 33
             : craftingType === 'forge'
-              ? -100
+              ? // Deliberately test the lower clamp: cooling cannot lower
+                // harmony further, so this restoration really is inert.
+                -100
               : 0,
         harmonyData,
       });
@@ -186,6 +188,7 @@ describe('independent reviewer sublime recovery counterexample', () => {
   )('retains full-bar recovery when %s state evolves', (craftingType) => {
     const { state: original, config } = input();
     const state = original.copy({
+      harmony: 0,
       harmonyData: initHarmonyData(craftingType, 200),
     });
     const cfg = { ...config, craftingType };
@@ -206,7 +209,7 @@ describe('independent reviewer sublime recovery counterexample', () => {
     const { state: original, config } = input();
     const harmonyData = initHarmonyData('forge', 200);
     harmonyData.forgeWorks = { heat: 7, lastBuffedHeat: 7 };
-    const state = original.copy({ harmonyData });
+    const state = original.copy({ harmonyData, harmony: 0 });
     const cfg = { ...config, craftingType: 'forge' as const };
     const after = applySkillOutcomes(
       state,
@@ -225,7 +228,7 @@ describe('independent reviewer sublime recovery counterexample', () => {
     const { state: original, config } = input();
     const harmonyData = initHarmonyData('returningCycle', 200);
     harmonyData.returningCycle!.charges = 2;
-    const state = original.copy({ harmonyData });
+    const state = original.copy({ harmonyData, harmony: 0 });
     const restore = { ...config.skills[1], type: 'stabilize' as const };
     const cfg = {
       ...config,

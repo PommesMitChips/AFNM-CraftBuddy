@@ -3595,6 +3595,13 @@ export function applySkill(
             ),
           );
   }
+  // The native PRD map changes only inside its stated-chance < 1 trial block.
+  // A guaranteed action preserves prior carry-over, including an unknown
+  // streak. A real PRD trial can itself reach probability 1 and still reset.
+  const performsPrdTrial =
+    config.techniqueSuccessModel === 'prd' &&
+    skill.actionKind !== 'item' &&
+    (successChance ?? 1) < 1;
   if (resolveChance) {
     let probability = successChance ?? 1;
     if (
@@ -3698,12 +3705,7 @@ export function applySkill(
     targetPerfection,
     context,
   );
-  if (
-    result &&
-    resolveChance &&
-    config.techniqueSuccessModel === 'prd' &&
-    skill.actionKind !== 'item'
-  ) {
+  if (result && resolveChance && performsPrdTrial) {
     const key = 'prd_failures_' + skill.key,
       previous = state.nativeVariables?.[key];
     if (successChance === 1 || previous !== undefined)

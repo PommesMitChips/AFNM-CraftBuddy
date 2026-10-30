@@ -1605,11 +1605,33 @@ strength. `processResonance` models this. Omitting the subsystem is therefore
 not a neutral approximation: at stability 5, a refine costing 2 can end the
 craft immediately after the additional 3-stability penalty.
 
-`hydrateHarmonyData` reports `source: missing` when the live progress payload
-cannot establish a non-forge harmony. Its Returning Cycle presentation defaults
+`hydrateHarmonyData` reports `source: missing` for a non-forge harmony when no
+live progress payload exists. An empty or incomplete payload is still labeled
+`progressState`; that source tag does not establish subsystem completeness.
+Certification checks the resulting envelope and requires the active stateful
+subsystem after step zero. Its Returning Cycle presentation defaults
 do not prove that live charges/stored Qi are zero. The adapter now preserves
 that uncertainty by withholding missing-source data from the search state.
 Certification rejects missing/unknown harmony types, absent envelopes, and
 missing active stateful subsystems after step zero. Observed Forge fallbacks
 remain accepted. The regression in `reviewSafetyIdentity.test.ts` contrasts the
 missing Resonance snapshot with the observed penalty-bearing state.
+
+### Guaranteed actions preserve PRD carry-over, independent review
+
+The same 0.7.18 artifact's success block updates `KLc` only inside the stated
+chance `u < 1` branch. A failure increments the map and a successful trial
+deletes its entry. A stated chance of one bypasses the trial and leaves the
+map unchanged. This differs from a real trial whose streak-adjusted chance
+reaches one: that trial still resets the streak on success.
+
+An independent Astra audit supplied a two-action source reproduction: base
+success 0.5, a +0.5 chance condition on the first action, then neutral. The
+simulator incorrectly reset the streak on the first guaranteed action. An
+incoming streak of two subsequently produced 30.2103% instead of 90.6309%;
+an unknown incoming streak incorrectly became an exact probability. Root
+independently reproduced the result and inspected the native block before
+repair. `prdGuaranteedCarry.test.ts` now covers known/unknown preservation,
+policy uncertainty, real probability-one trials, zero-chance trials and an
+immediately guaranteed finish. This is scoped source/artifact evidence, not
+live-game sampling.
