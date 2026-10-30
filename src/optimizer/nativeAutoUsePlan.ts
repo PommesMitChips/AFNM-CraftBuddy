@@ -155,6 +155,7 @@ function conditionMatches(
               (effect) =>
                 effect?.kind === 'createBuff' &&
                 effect.buff &&
+                typeof effect.buff.name === 'string' &&
                 keyFor(effect.buff.name) === key,
             ),
         );
@@ -280,7 +281,14 @@ function selectItems(
       item.action.effects != null &&
       (!Array.isArray(item.action.effects) ||
         item.action.effects.some(
-          (effect) => !effect || typeof effect.kind !== 'string',
+          (effect) =>
+            !effect ||
+            typeof effect.kind !== 'string' ||
+            (effect.kind === 'createBuff' &&
+              (!effect.buff ||
+                !record(effect.buff) ||
+                typeof effect.buff.name !== 'string' ||
+                !effect.buff.name.trim())),
         ))
     )
       return undefined;

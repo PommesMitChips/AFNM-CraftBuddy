@@ -108,8 +108,11 @@ class SearchBudgetReached extends Error {
 function stateKey(node: NodeState): string {
   return JSON.stringify(
     [node.condition, node.queue, node.pending, node.state],
-    (key, value: unknown) => {
-      if (key === 'history' || key === '_cacheKey') return undefined;
+    function (key, value: unknown) {
+      // Only omit bookkeeping owned by this CraftingState. Identically named
+      // nested counters are mechanics (e.g. buff internalState.history).
+      if (this === node.state && (key === 'history' || key === '_cacheKey'))
+        return undefined;
       if (value instanceof Map)
         return Array.from(value.entries()).sort(([a], [b]) =>
           String(a).localeCompare(String(b)),

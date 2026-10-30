@@ -2515,6 +2515,7 @@ describe('overcraft extras scoring', () => {
         maxCompletion: OVERCRAFT_CAP,
         maxPerfection: OVERCRAFT_CAP,
         skills: [refine, wait],
+        craftingType: 'formless',
       }),
       // The tier is banked and the craft is near its stability end, so the
       // recommendation is priced by the terminal finish: this is the reported
@@ -2526,6 +2527,8 @@ describe('overcraft extras scoring', () => {
         completion: TWO_BANDS,
         perfection: TWO_BANDS,
         step: 10,
+        harmony: 33,
+        harmonyData: { recommendedTechniqueTypes: [] },
       }),
     };
   }

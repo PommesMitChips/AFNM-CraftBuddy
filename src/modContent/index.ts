@@ -1919,7 +1919,9 @@ function updateRecommendation(
     consumedPillsThisTurn,
     buffs: extractedBuffs,
     harmony: gameHarmony,
-    harmonyData,
+    // Presentation hydration may supply defaults (notably Returning Cycle).
+    // A missing observation cannot establish a safe simulated transition.
+    harmonyData: harmonyDataSource === 'missing' ? undefined : harmonyData,
     completionBonus: completionBonusStacks,
     nativeVariables,
     step: progressState?.step || 0,

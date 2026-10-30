@@ -1595,3 +1595,21 @@ against the extracted `dcu` passed 486 combinations of gates, step, stability,
 stacks and condition. This is scoped availability evidence, not exhaustive
 transition parity. Existing Rust arithmetic and its regenerated differential
 corpus are unchanged.
+
+### Missing harmony observations, review comment 4422591232
+
+The same 0.7.18 artifact was rechecked on 2026-10-30. In the Resonance
+different-action branch, unless it is the second consecutive action toward the
+pending resonance, the runtime subtracts 9 harmony and 3 stability and reduces
+strength. `processResonance` models this. Omitting the subsystem is therefore
+not a neutral approximation: at stability 5, a refine costing 2 can end the
+craft immediately after the additional 3-stability penalty.
+
+`hydrateHarmonyData` reports `source: missing` when the live progress payload
+cannot establish a non-forge harmony. Its Returning Cycle presentation defaults
+do not prove that live charges/stored Qi are zero. The adapter now preserves
+that uncertainty by withholding missing-source data from the search state.
+Certification rejects missing/unknown harmony types, absent envelopes, and
+missing active stateful subsystems after step zero. Observed Forge fallbacks
+remain accepted. The regression in `reviewSafetyIdentity.test.ts` contrasts the
+missing Resonance snapshot with the observed penalty-bearing state.

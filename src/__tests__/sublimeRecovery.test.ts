@@ -34,8 +34,18 @@ const fixture = JSON.parse(
 function input() {
   const skills = fixture.skills.map(retargetSkill);
   return {
-    state: new CraftingState(fixture.state),
-    config: retargetConfig(skills[0], { ...fixture.config, skills }),
+    // The supplied fixture omitted the selected harmony. Exercise the inert
+    // recovery proof with an explicit, established stateless Formless craft.
+    state: new CraftingState({
+      ...fixture.state,
+      harmony: 33,
+      harmonyData: initHarmonyData('formless'),
+    }),
+    config: retargetConfig(skills[0], {
+      ...fixture.config,
+      skills,
+      craftingType: 'formless',
+    }),
   };
 }
 function search(
@@ -308,6 +318,21 @@ describe('independent reviewer sublime recovery counterexample', () => {
   test('does not claim a no-benefit proof for an unknown harmony implementation', () => {
     const { state, config } = input();
     const cfg = { ...config, craftingType: 'futureHarmony' as HarmonyType };
-    expect(candidates(search(state, cfg, 1))).toContain('restore');
+    const result = search(state, cfg, 1);
+    expect(result.recommendation).toBeNull();
+    expect(result.blockedReasons?.some((r) => r.reason === 'unresolved')).toBe(
+      true,
+    );
+  });
+  test('the unmodified reviewer fixture cannot certify an unspecified harmony', () => {
+    const skills = fixture.skills.map(retargetSkill);
+    const result = search(
+      new CraftingState(fixture.state),
+      retargetConfig(skills[0], { ...fixture.config, skills }),
+    );
+    expect(result.recommendation).toBeNull();
+    expect(
+      result.blockedReasons?.some((r) => r.details.includes('harmony type')),
+    ).toBe(true);
   });
 });

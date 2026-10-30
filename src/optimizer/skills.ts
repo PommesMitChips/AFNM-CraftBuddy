@@ -9,6 +9,7 @@ import { CraftingState, BuffType } from './state';
 import type { NativeAutoUsePlan } from './nativeAutoUsePlan';
 import { findUnsupportedCraftingPayload } from './transitionValidation';
 import { meetsNativeAvailability } from './nativeAvailability';
+import { HARMONY_TYPES } from './harmonyRegistry';
 import {
   enumerateDecisions,
   resolvedCrit,
@@ -2807,6 +2808,27 @@ export function getUnsupportedTransitionReason(
   config: OptimizerConfig,
   conditionEffects: ConditionEffect[] = [],
 ): string | undefined {
+  if (config.isSublimeCraft) {
+    const type = config.craftingType;
+    if (!type || !HARMONY_TYPES.includes(type))
+      return 'Missing or unsupported sublime harmony type';
+    if (!state.harmonyData) return `Missing harmony state for ${type}`;
+    const subsystem: Partial<
+      Record<HarmonyType, keyof import('./gameTypes').HarmonyData>
+    > = {
+      forge: 'forgeWorks',
+      alchemical: 'alchemicalArts',
+      inscription: 'inscribedPatterns',
+      resonance: 'resonance',
+      enhancingEcho: 'enhancingEcho',
+      eccentricDecree: 'eccentricDecree',
+      captivatingCadence: 'captivatingCadence',
+      returningCycle: 'returningCycle',
+    };
+    const key = subsystem[type];
+    if (state.step > 0 && key && !state.harmonyData[key])
+      return `Missing harmony subsystem ${key} for ${type}`;
+  }
   const raw = findUnsupportedCraftingPayload(
     skill,
     Array.from(state.buffs.values(), (b) => b.definition),

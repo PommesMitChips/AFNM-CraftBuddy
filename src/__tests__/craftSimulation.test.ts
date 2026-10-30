@@ -746,6 +746,7 @@ describe('craft simulation — finish craft policy', () => {
       baseControl: 1,
       skills: [stabilize, riskyFusion, riskyRefine],
       isSublimeCraft: true,
+      craftingType: 'formless',
       targetMultiplier: 2,
       maxCompletion: 200,
       maxPerfection: 200,
@@ -756,6 +757,8 @@ describe('craft simulation — finish craft policy', () => {
       initialMaxStability: 40,
       completion: 100,
       perfection: 100,
+      harmony: 33,
+      harmonyData: { recommendedTechniqueTypes: [] },
     });
 
     const sim = simulateCraft(state, config, 200, 200, ['neutral'], 2, 4);
