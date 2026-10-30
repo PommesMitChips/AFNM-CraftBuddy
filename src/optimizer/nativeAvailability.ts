@@ -62,8 +62,14 @@ export function unsupportedNativeTechnique(value: unknown): string | undefined {
   for (const key of Object.keys(value))
     if (!nativeFields.has(key) && value[key] !== undefined)
       return `Unsupported native technique field: ${key}`;
-  for (const key of ['firstActionOnly', 'disableAtMaxStacks', 'noQiCost'])
-    if (value[key] != null && typeof value[key] !== 'boolean')
+  for (const key of [
+    'firstActionOnly',
+    'disableAtMaxStacks',
+    'noQiCost',
+    'noMaxStabilityLoss',
+  ])
+    // Mechanics flags must not depend on truthiness or JSON null coercion.
+    if (value[key] !== undefined && typeof value[key] !== 'boolean')
       return `Unsupported native availability field: ${key}`;
   for (const key of [
     'minStability',

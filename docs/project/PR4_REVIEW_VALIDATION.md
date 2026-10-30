@@ -223,3 +223,20 @@ Full Jest: **56 suites / 1,214 tests passed**. Strict TypeScript and production 
 ### Eighth-follow-up validation
 
 Full Jest: **57 suites / 1,299 tests passed**, including 85 new numeric-boundary cases. Strict TypeScript and production build passed at 6.9.0 with the three existing webpack size warnings. The compiled worker rejects malformed values across all eight native numeric fields, and prior PRD carry, hidden uncertainty, cache identity, missing harmony, final-preview and guaranteed-finish checks pass. Seven fixed-budget replay picks and planning metrics remain identical to bcdaa30. Documentation checks passed. Rust arithmetic and differential data are unchanged; the previously recorded Rust results were not rerun for this validation-only boundary change. No new live-game acceptance is claimed; the installed 8162df4 package is unchanged.
+
+## Ninth review follow-up (findings on ca88204)
+
+The incoming documentation commit ca88204 was fast-forwarded and preserved before the repair.
+
+| Review comment | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 4423660056 | Native Qi field name in documentation | Preserved the documentation update already pushed in ca88204 and made the exact native key poolCost explicit alongside its Qi label. The finite-number check and regression matrix already cover this field. |
+| 4423970128 | Malformed native mechanics flags | Fixed. noMaxStabilityLoss now joins firstActionOnly, disableAtMaxStacks and noQiCost in strict boolean validation. All four distinguish omission/undefined from explicit null; strings, numbers, objects and nonfinite values cannot become certified flags through truthiness or JSON conversion. New regressions exercise actual extraction, unresolved recommendations, replay/worker JSON transport, valid true/false max-stability outcomes and a valid alternative beside a malformed action. Valid transition arithmetic and safety ordering are unchanged. |
+
+### Ninth-follow-up validation
+
+Full Jest: **58 suites / 1,317 tests passed**. Strict TypeScript and production build passed at 6.9.0 with the three existing webpack size warnings. Compiled-worker checks reject malformed values in all four mechanics flags and preserve true/false max-stability behavior, alongside previous safety regressions. Seven fixed-budget replay recommendations and planning metrics remain unchanged versus ca88204. Documentation checks passed. Rust arithmetic and differential data are unchanged; prior Rust results were not rerun for this validation-only change. The installed d6912ed package was not changed.
+
+### Celadon compatibility comparison (diagnosis only)
+
+The current runtime Flickering Celadon Flame grants Celadon Cycle, whose four stackGained.<Ember> listeners restore 10% maximum Qi and 10 stability and consume all four embers. The untouched original 6.8.0 artifact also lacks these stack-change events. A synthetic four-action sequence with maximum Qi 200, initial Qi 100/stability 40 and action costs 10 Qi/5 stability ended at 60 Qi/20 stability with all four embers retained in the original simulator; native rules imply 80 Qi/30 stability with the embers consumed. The original still returned a recommendation. The strict trigger preflight introduced in 772c680 instead pauses with Unsupported crafting trigger: stackGained.Fusion Ember. Thus the visible pause is new, while the missing simulation predates it. This comparison is not a replay of the player’s full character and does not establish recipe feasibility. Celadon stack-trigger support remains unimplemented; the guard was not bypassed.
