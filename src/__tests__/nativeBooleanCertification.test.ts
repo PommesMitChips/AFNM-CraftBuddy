@@ -47,7 +47,11 @@ const badValues = [
 ];
 const state = () =>
   new CraftingState({ qi: 100, stability: 60, initialMaxStability: 60 });
-const extracted = (value: unknown, name = 'Probe') =>
+const extracted = (
+  value: unknown,
+  name = 'Probe',
+  flag: (typeof flags)[number] = 'noMaxStabilityLoss',
+) =>
   convertGameTechniques([
     {
       name,
@@ -57,7 +61,7 @@ const extracted = (value: unknown, name = 'Probe') =>
       cooldown: 0,
       currentCooldown: 0,
       successChance: 1,
-      noMaxStabilityLoss: value,
+      [flag]: value,
       effects: [{ kind: 'completion', amount: { value: 10 } }],
     },
   ] as unknown as CraftingTechnique[])[0];
@@ -133,34 +137,70 @@ test.each([false, true])(
     expect(result.outcomes[0].state.stability).toBe(value ? 60 : 59);
   },
 );
-test.each([NaN, Infinity, -Infinity])(
-  'JSON replay/worker cannot launder nonfinite flags: %s',
-  (value) => {
-    const config = configFor(extracted(value));
-    const replay = reviveConfigSnapshot(
-      JSON.parse(JSON.stringify(buildConfigSnapshot(config))),
-    );
-    expect(applySkillOutcomes(state(), replay.skills[0], replay)).toMatchObject(
-      { outcomes: [], unresolvedProbability: 1 },
-    );
-    const input = {
-      state: state(),
-      config,
-      targetCompletion: 100,
-      targetPerfection: 0,
-      lookaheadDepth: 2,
-      currentCondition: 'neutral' as const,
-      forecast: [],
-      searchConfig: settings,
-    };
-    const result = runSearchBackendInput(
-      reviveSearchInput(
-        JSON.parse(JSON.stringify(serializeSearchInput(input))),
-      ),
-    );
-    expect(result.recommendation).toBeNull();
-  },
-);
+test.each(
+  flags.flatMap((flag) =>
+    [NaN, Infinity, -Infinity].map((value) => ({ flag, value })),
+  ),
+)('JSON replay/worker cannot launder $flag=$value', ({ flag, value }) => {
+  const config = configFor(extracted(value, 'Probe', flag));
+  const replay = reviveConfigSnapshot(
+    JSON.parse(JSON.stringify(buildConfigSnapshot(config))),
+  );
+  expect(
+    (replay.skills[0].nativeTechnique as Record<string, unknown>)[flag],
+  ).toBeNull();
+  expect(applySkillOutcomes(state(), replay.skills[0], replay)).toMatchObject({
+    outcomes: [],
+    unresolvedProbability: 1,
+  });
+  const input = {
+    state: state(),
+    config,
+    targetCompletion: 100,
+    targetPerfection: 0,
+    lookaheadDepth: 2,
+    currentCondition: 'neutral' as const,
+    forecast: [],
+    searchConfig: settings,
+  };
+  const result = runSearchBackendInput(
+    reviveSearchInput(JSON.parse(JSON.stringify(serializeSearchInput(input)))),
+  );
+  expect(result.recommendation).toBeNull();
+  expect(
+    result.blockedReasons?.some(
+      (reason) =>
+        reason.reason === 'unresolved' &&
+        reason.details === `Unsupported native availability field: ${flag}`,
+    ),
+  ).toBe(true);
+});
+test.each(
+  flags.flatMap((flag) => [false, true].map((value) => ({ flag, value }))),
+)('JSON worker transport preserves valid $flag=$value', ({ flag, value }) => {
+  const config = configFor(extracted(value, 'Probe', flag));
+  const input = {
+    state: state(),
+    config,
+    targetCompletion: 100,
+    targetPerfection: 0,
+    lookaheadDepth: 2,
+    currentCondition: 'neutral' as const,
+    forecast: [],
+    searchConfig: settings,
+  };
+  const revived = reviveSearchInput(
+    JSON.parse(JSON.stringify(serializeSearchInput(input))),
+  );
+  expect(
+    (revived.config.skills[0].nativeTechnique as Record<string, unknown>)[flag],
+  ).toBe(value);
+  const result = runSearchBackendInput(revived);
+  expect(result.recommendation).not.toBeNull();
+  expect(result.recommendation?.planning?.transitionUnresolvedProbability).toBe(
+    0,
+  );
+});
 test('invalid unused flag does not block a valid alternative', () => {
   const bad = extracted('true');
   const good = extracted(true, 'Good');
