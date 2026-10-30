@@ -148,13 +148,15 @@ function conditionMatches(
       const key = keyFor(label);
       const known =
         state.buffs.has(key) ||
-        Object.values(config.nativeAutoUsePlan?.items ?? {}).some((item) =>
-          item.action.effects?.some(
-            (effect) =>
-              effect.kind === 'createBuff' &&
-              effect.buff &&
-              keyFor(effect.buff.name) === key,
-          ),
+        Object.values(config.nativeAutoUsePlan?.items ?? {}).some(
+          (item) =>
+            Array.isArray(item.action.effects) &&
+            item.action.effects.some(
+              (effect) =>
+                effect?.kind === 'createBuff' &&
+                effect.buff &&
+                keyFor(effect.buff.name) === key,
+            ),
         );
       if (!known) return undefined;
       value = state.getBuffStacks(key);
@@ -274,6 +276,14 @@ function selectItems(
       tracked + used >= slot.maxCount
     )
       continue;
+    if (
+      item.action.effects != null &&
+      (!Array.isArray(item.action.effects) ||
+        item.action.effects.some(
+          (effect) => !effect || typeof effect.kind !== 'string',
+        ))
+    )
+      return undefined;
     const buffs =
       item.action.effects?.filter((effect) => effect.kind === 'createBuff') ??
       [];
@@ -327,7 +337,9 @@ export function projectNativeAutoUseBranches(
   config: OptimizerConfig,
   currentCondition?: string,
 ): ActionOutcomeDistribution {
-  for (const item of Object.values(config.nativeAutoUsePlan?.items ?? {})) {
+  const selected = selectItems(state, config, currentCondition);
+  if (!selected) return { outcomes: [], unresolvedProbability: 1 };
+  for (const { item } of selected) {
     const unsupportedReason = getUnsupportedTransitionReason(
       state,
       item.action,
@@ -337,8 +349,6 @@ export function projectNativeAutoUseBranches(
     if (unsupportedReason)
       return { outcomes: [], unresolvedProbability: 1, unsupportedReason };
   }
-  const selected = selectItems(state, config, currentCondition);
-  if (!selected) return { outcomes: [], unresolvedProbability: 1 };
   let outcomes = [{ state, probability: 1 }];
   let unresolvedProbability = 0;
   let unsupportedReason: string | undefined;

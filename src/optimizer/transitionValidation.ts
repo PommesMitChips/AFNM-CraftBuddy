@@ -1,4 +1,6 @@
 import { isSupportedCraftingExpression } from './gameTypes';
+import { unsupportedNativeTechnique } from './nativeAvailability';
+import { normalizeIdentifier } from './nameNormalization';
 
 const techniqueKinds = new Set([
   'completion',
@@ -231,6 +233,30 @@ export function findUnsupportedCraftingPayload(
   }
   try {
     const skill = record(skillValue, 'skill');
+    const nativeReason = unsupportedNativeTechnique(skill.nativeTechnique);
+    if (nativeReason) fail(nativeReason);
+    if (skill.nativeTechnique != null) {
+      const native = record(skill.nativeTechnique, 'native technique');
+      for (const e of list(native.effects, 'native effects'))
+        effect(e, false, 0);
+      // Gates alone are insufficient if the normalized transition would omit
+      // the corresponding payment. Native construction has already applied
+      // masteries to costs, so check the directly copied payment fields only.
+      for (const key of ['dropletCost', 'toxicityCost'])
+        if (native[key] != null && native[key] !== (skill[key] ?? 0))
+          fail(`Native payment differs from projected ${key}`);
+      if (native.buffCost != null) {
+        const rawCost = record(native.buffCost, 'native buff cost');
+        const rawBuff = record(rawCost.buff, 'native cost buff');
+        const cost = record(skill.buffCost, 'projected buff cost');
+        if (
+          cost.buffName !== normalizeIdentifier(String(rawBuff.name)) ||
+          cost.amount !== rawCost.amount ||
+          cost.consumeAll
+        )
+          fail('Native buff payment differs from projected cost');
+      }
+    }
     for (const e of list(skill.effects, 'technique effects'))
       effect(e, false, 0);
     if (skill.grantedBuff != null) buff(skill.grantedBuff);

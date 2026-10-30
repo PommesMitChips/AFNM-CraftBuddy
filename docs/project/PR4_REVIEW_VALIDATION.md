@@ -4,7 +4,7 @@ status: active
 authoritative: true
 owner: craftbuddy-maintainers
 game_version: 0.7.18-97c093b
-last_verified: 2026-10-29
+last_verified: 2026-10-30
 source_of_truth: src/__tests__/prReviewRegressions.test.ts, src/__tests__/nativeAutoUsePlan.test.ts, docs/project/RUNTIME_EVIDENCE.md
 review_cycle_days: 90
 related_files:
@@ -141,9 +141,11 @@ Validated on 2026-10-29:
 
 This is executable synthetic/source/artifact validation, not new live-game acceptance. The previously installed mod and preserved comparison archives were not modified.
 
-## Fourth review follow-up (reviewed head cf73ce2)
+## Fourth review follow-up (fixes shipped in 772c680)
 
 Three valid findings were fixed, including a carried-over pre-auto-use gate finding. The proposed step-zero-reagent exception was rejected with a regression showing the actual availability change and why it cannot benefit an inert wait.
+
+Those findings were raised against cf73ce2; the implementation and validation below belong to 772c680. The older revision is the comparison baseline.
 
 | Review comment | Finding | Disposition and evidence |
 | --- | --- | --- |
@@ -160,3 +162,20 @@ Three valid findings were fixed, including a carried-over pre-auto-use gate find
 - Seven fixed-budget production replay recommendations and planning fields remain unchanged versus cf73ce2. Initial probing exposed optional null metadata in two legacy skills; compatibility was corrected and regressed before the final results.
 - Documentation inventory/link/freshness/authority checks passed. Existing Rust transition arithmetic and differential data were not modified.
 - Visual inspection was attempted, but the app browser timed out reaching the localhost harness. No visual or live-game acceptance claim is made; the temporary server was stopped. The installed mod remains unchanged.
+
+## Fifth review follow-up (findings on 772c680)
+
+Four implementation findings and one documentation clarification were addressed. The terminal-label finding was rejected with a full planner-to-summary regression. Ranking, risk ordering, probability accounting and dispatch snapshot verification were preserved.
+
+| Review comment | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 4416939157 | Native availability payload | Fixed. This was a real worker gap: the inspected 0.7.18 dcu checks firstActionOnly, strict minStability and disableAtMaxStacks, and the game contains techniques using all three. Workers now enforce these gates plus exact native condition/resource/buff requirements without relying on the live callback. Raw native fields are schema-checked before certification; unknown fields and malformed gates remain unresolved. Directly copied payment fields must match the projected transition, and native payload changes invalidate recommendation context. Simulated cooldowns remain authoritative. The local gate matched the extracted native function across 486 cases. |
+| 4416939168 | Terminal goals label | Disagree for the reviewed head. buildOutcomeSummary already chooses “Selected goals not reached” when goals are unmet and projection.willAutoFinish is true; the panel renders that status directly. Added an end-to-end source regression through findBestSkill with zero stability and unmet goals, verifying no recommendation and the stopped label. No production UI change was needed. |
+| 4416939182 | Unsupported expression values | Fixed. Certification now parses a restricted numeric/boolean formula grammar before compilation. Object literals, bare function values, comma expressions, null, empty numeric calls, nonfinite literals and update operators are rejected. Supported arithmetic, comparisons, logical operators, parentheses and numeric calls remain accepted. The permissive EV evaluator is unchanged; rejected formulas become unresolved transitions instead of certificates based on its zero fallback. |
+| 4416939188 | Unsupported unselected native items | Fixed. Native selection now precedes payload preflight. An unsupported item proven skipped by inventory, rule, pill budget, max count or toxicity no longer blocks an otherwise enabled technique. Unknown selection and unsupported selected items remain unresolved. Selector structural guards preserve conservative handling of malformed effect arrays. Regression cases cover all five skip reasons and the unresolved controls. |
+| 4416939200 | Unresolved active buff definitions | Fixed. After roster-based buff resolution, any remaining active buff without a definition returns an explicit unresolved reason. A buff successfully resolved from the roster remains supported. This exposed one historical replay that saved only names/stacks for nine active buffs; its fixture is preserved, and the regression now requires a pause naming Spirit Cauldron Construct rather than an uncertifiable pick. Seven other fixed-budget replay recommendations and policy fields stayed unchanged. |
+| 4416939210 | Validation revision label | Clarified. The fourth-follow-up heading now says “fixes shipped in 772c680”, and the text explicitly identifies cf73ce2 as the revision against which the findings were raised and the comparison baseline. The 52-suite validation is attributed to the implementation in 772c680. |
+
+### Fifth-follow-up validation
+
+Full Jest: **53 suites / 1,182 tests passed**. Strict TypeScript and production build passed at 6.9.0 (three existing webpack size warnings). Rust: **94 passed, 3 profiling tests ignored**; the regenerated 178-scenario / 1,555-transition corpus is unchanged. Compiled-worker checks cover the new native gates, missing buffs, unsupported expressions and unselected items, plus previous guaranteed-finish, hidden-PRD, eight-band and inert-recovery checks. The installed-runtime gate comparison passed **486 cases**. Seven fixed-budget replay recommendations and planning fields remained identical to 772c680; the separate incomplete historical replay now correctly pauses. Documentation checks passed. No new live-game or visual acceptance claim is made.

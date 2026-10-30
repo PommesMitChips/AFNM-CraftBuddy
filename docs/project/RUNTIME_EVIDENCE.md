@@ -4,7 +4,7 @@ status: active
 authoritative: true
 owner: craftbuddy-maintainers
 game_version: 0.7.18-97c093b
-last_verified: 2026-10-29
+last_verified: 2026-10-30
 source_of_truth: installed AFNM 0.7.18 runtime bundle; earlier sections identify their historical builds and coverage
 review_cycle_days: 90
 related_files:
@@ -1574,3 +1574,24 @@ click callback runs native auto-use `v()`, followed by technique dispatch
 currently disabled technique clickable. Native auto-use stays inside the enabled
 control path; direct dispatch remains forbidden when the loadout is active.
 This is also the contract already recorded in section 17.3.
+
+### Native availability payload, rechecked for review comment 4416939157
+
+The same 0.7.18-97c093b artifact was rechecked on 2026-10-30. `dcu`
+requires sufficient Qi, buff payment/requirement stacks, toxicity capacity and
+droplets, an exact condition match, zero cooldown and positive stability. It also
+checks `firstActionOnly` against step zero, `minStability` with a strict `>`
+comparison, and `disableAtMaxStacks` against each createBuff effect. Serpent's
+Foundation declares firstActionOnly, Coiled Strike declares minStability 45,
+and capped-buff techniques declare disableAtMaxStacks. These are real native
+gates, not hypothetical future metadata.
+
+The worker previously lacked those three gates because it has no live native
+callback. `nativeAvailability.ts` now mirrors them from the raw payload, with
+simulated cooldowns and resource state. The raw schema is checked before
+certification, including matching directly copied payment fields. Unknown
+fields or malformed gates cannot receive a certificate. An executable comparison
+against the extracted `dcu` passed 486 combinations of gates, step, stability,
+stacks and condition. This is scoped availability evidence, not exhaustive
+transition parity. Existing Rust arithmetic and its regenerated differential
+corpus are unchanged.

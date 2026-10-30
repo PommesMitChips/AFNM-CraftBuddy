@@ -17,6 +17,18 @@ const search = {
 };
 
 describe('recommendation context invalidation', () => {
+  it('invalidates raw native availability changes', () => {
+    const withGate = (minStability: number) => ({
+      ...DEFAULT_CONFIG,
+      skills: DEFAULT_CONFIG.skills.map((skill) => ({
+        ...skill,
+        nativeTechnique: { minStability },
+      })),
+    });
+    expect(buildCrossStepCacheScope(withGate(10), 100, 100, search)).not.toBe(
+      buildCrossStepCacheScope(withGate(45), 100, 100, search),
+    );
+  });
   it.each([
     { perfectionBandGoal: 8 },
     { completionBandCeiling: 8 },

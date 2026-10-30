@@ -28,14 +28,8 @@ export function buildCrossStepCacheScope(
   const { transpositionCache: _table, ...search } = searchConfig;
   return serializeCanonicalValue({
     targets: [targetCompletion, targetPerfection],
-    config: {
-      ...config,
-      // This dispatch-only payload includes live cooldown/UI state. The pure
-      // skill definition contains the simulator's costs/effects/masteries.
-      skills: config.skills.map(
-        ({ nativeTechnique: _payload, ...skill }) => skill,
-      ),
-    },
+    // Raw native gates now participate in worker legality and certification.
+    config,
     search,
   });
 }

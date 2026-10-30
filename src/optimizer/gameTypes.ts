@@ -778,20 +778,79 @@ function compileExpression(
 export function isSupportedCraftingExpression(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   if (!value) return true;
-  // EV replacement of {rng} is not an enumerated random outcome.
-  if (value.includes('{rng}') || /\b[A-Za-z_]\w*\s*\./.test(value))
-    return false;
-  const calls = Array.from(
-    value
-      .replace(/\band\b/g, '&&')
-      .replace(/\bor\b/g, '||')
-      .matchAll(/\b([A-Za-z_]\w*)\s*\(/g),
-    (match) => match[1],
-  );
+  if (value.length > MAX_EXPRESSION_LENGTH) return false;
+  // Update operators are valid JavaScript but not pure numeric formulas.
+  if (/\+\+|--/.test(value)) return false;
+  const normalized = value.replace(/\band\b/g, '&&').replace(/\bor\b/g, '||');
+  const tokens: string[] = [];
+  const token =
+    /^\s*(\d+(?:\.\d*)?(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?|[A-Za-z_]\w*|===|!==|==|!=|<=|>=|&&|\|\||\*\*|[()+\-*/%<>,!&|])/;
+  let offset = 0;
+  while (offset < normalized.length) {
+    if (!normalized.slice(offset).trim()) break;
+    const match = token.exec(normalized.slice(offset));
+    if (!match) return false;
+    tokens.push(match[1]);
+    offset += match[0].length;
+  }
+  const functions = new Set(['floor', 'ceil', 'round', 'min', 'max', 'abs']);
+  const binary = new Set([
+    '+',
+    '-',
+    '*',
+    '/',
+    '%',
+    '**',
+    '<',
+    '<=',
+    '>',
+    '>=',
+    '==',
+    '!=',
+    '===',
+    '!==',
+    '&&',
+    '||',
+    '&',
+    '|',
+  ]);
+  let index = 0;
+  // This recognizes only numeric/boolean operands and numeric function calls.
+  // The compiler still enforces JavaScript precedence and syntax restrictions.
+  function operand(depth: number): boolean {
+    if (depth > 64) return false;
+    const t = tokens[index++];
+    if (!t) return false;
+    if (['+', '-', '!'].includes(t)) return operand(depth + 1);
+    if (t === '(') return expression(depth + 1) && tokens[index++] === ')';
+    if (/^[\d.]/.test(t)) return Number.isFinite(Number(t));
+    if (!/^[A-Za-z_]\w*$/.test(t)) return false;
+    if (functions.has(t)) {
+      if (tokens[index++] !== '(') return false;
+      let count = 0;
+      do {
+        if (count) index++;
+        if (!expression(depth + 1)) return false;
+        count++;
+      } while (tokens[index] === ',');
+      return (
+        tokens[index++] === ')' && (t === 'min' || t === 'max' || count === 1)
+      );
+    }
+    return t === 'true' || t === 'false' || !JS_RESERVED_WORDS.has(t);
+  }
+  function expression(depth: number): boolean {
+    if (!operand(depth)) return false;
+    while (binary.has(tokens[index])) {
+      index++;
+      if (!operand(depth)) return false;
+    }
+    return true;
+  }
   return (
-    calls.every((name) =>
-      ['floor', 'ceil', 'round', 'min', 'max', 'abs'].includes(name),
-    ) && compileExpression(value) !== null
+    expression(0) &&
+    index === tokens.length &&
+    compileExpression(value) !== null
   );
 }
 

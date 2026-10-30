@@ -8,6 +8,7 @@
 import { CraftingState, BuffType } from './state';
 import type { NativeAutoUsePlan } from './nativeAutoUsePlan';
 import { findUnsupportedCraftingPayload } from './transitionValidation';
+import { meetsNativeAvailability } from './nativeAvailability';
 import {
   enumerateDecisions,
   resolvedCrit,
@@ -2813,6 +2814,9 @@ export function getUnsupportedTransitionReason(
   );
   if (raw) return raw;
   const resolved = getResolvedActiveBuffs(state, config);
+  for (const [key, buff] of Array.from(resolved))
+    if (!buff.definition)
+      return `Unresolved active buff definition: ${buff.name || key}`;
   return resolved === state.buffs
     ? undefined
     : findUnsupportedCraftingPayload(
@@ -2933,6 +2937,12 @@ export function canApplySkill(
 ): boolean {
   if (state.qiDroplets < (skill.dropletCost ?? 0)) return false;
   const isItemAction = skill.actionKind === 'item';
+
+  if (
+    !isItemAction &&
+    !meetsNativeAvailability(skill.nativeTechnique, state, currentCondition)
+  )
+    return false;
 
   // Game requires current stability to be above 0 to perform actions.
   if (state.stability <= 0) {
@@ -4897,11 +4907,14 @@ export function getBlockedSkillReasons(
         pillsPerRound: config.pillsPerRound ?? 1,
         effectiveQiCost: effectiveCosts.qiCost,
       });
-      if (nativeCanUse === false) {
+      if (
+        nativeCanUse === false ||
+        !meetsNativeAvailability(skill.nativeTechnique, state, currentCondition)
+      ) {
         reasons.push({
           skillName: skill.name,
           reason: 'condition',
-          details: 'Blocked by game-native canUseAction precheck',
+          details: 'Blocked by native technique availability requirements',
         });
         continue;
       }

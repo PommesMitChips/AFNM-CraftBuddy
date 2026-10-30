@@ -4,8 +4,8 @@ status: active
 authoritative: true
 owner: craftbuddy-maintainers
 game_version: 0.7.17-d8ae6ce
-last_verified: 2026-10-29
-source_of_truth: src/optimizer/outcome.ts, src/optimizer/search.ts, src/optimizer/constrainedPlanner.ts, src/optimizer/searchBackend.ts, src/optimizer/skills.ts, src/optimizer/stochastic.ts, src/optimizer/transitionValidation.ts, src/optimizer/state.ts, src/optimizer/index.ts
+last_verified: 2026-10-30
+source_of_truth: src/optimizer/outcome.ts, src/optimizer/search.ts, src/optimizer/constrainedPlanner.ts, src/optimizer/searchBackend.ts, src/optimizer/skills.ts, src/optimizer/stochastic.ts, src/optimizer/transitionValidation.ts, src/optimizer/nativeAvailability.ts, src/optimizer/state.ts, src/optimizer/index.ts
 review_cycle_days: 30
 related_files:
   - AGENTS.md
@@ -31,6 +31,7 @@ The installed game inspected during that audit was **0.7.18-97c093b**. Historica
 | `constrainedPlanner.ts` | Production `constrainedSearch`, bounded stochastic planning and policy metadata |
 | `skills.ts` | Action legality and transition phases, discrete action outcomes and survival checks |
 | `transitionValidation.ts` | Conservative payload/schema preflight for certified transitions; unsupported mechanics remain unresolved |
+| `nativeAvailability.ts` | Audited native technique schema and pure availability gates, shared by workers and synchronous planning |
 | `stochastic.ts` | Bounded decision enumeration with unresolved probability mass retained explicitly |
 | `state.ts` | Resources, cooldowns, buffs/internal state, harmony, inventory and step |
 | `gameTypes.ts` | Scaling, effect definitions, condition data and band-count formulas |
@@ -146,3 +147,7 @@ A technique must pass the original state's availability predicate before its nat
 `applySkillOutcomes` preflights technique/mastery effects, active/resolved and nested buff definitions, trigger kinds, condition kinds/modes, scaling forms and supported expression syntax. Unknown payloads return no certified outcomes, unresolved probability one, and an explanatory reason. Native item plans use the same preflight. This is conservative: an unsupported section can pause a plan even if that section would be inactive this turn. It is not an exhaustive runtime parity proof. Permissive `applySkill`/EV helpers remain estimates; their skipped unknown data cannot be republished as an outcome certificate. Optional null metadata used by older replay transport retains its absent/default meaning.
 
 `OutcomeProjection` again describes the actual item tier and its required bands. Its separate optional `requestedGoals` section carries selected flat targets, band counts, attainment, binding bar and whether a met goal still needs craft resolution. The panel displays selected goals separately, retaining eight-band target visibility without claiming those bands are required for Perfect/Sublime. The automation-facing `targetsMet` still requires actual resolution.
+
+The follow-up certification boundary rejects active buffs that remain without a definition after roster resolution. Historical snapshots missing those definitions can now pause instead of returning an uncertifiable recommendation. Expression certification recognizes numeric/boolean formula syntax and supported numeric calls; object literals, bare function values, update operators and unsupported syntax are not certified through the legacy zero fallback.
+
+Raw `nativeTechnique` fields are part of recommendation identity. Workers locally enforce the inspected first-action, strict minimum-stability, maximum-stack, exact-condition, resource and buff gates; they do not rely on a live callback. Unknown native fields or malformed gates remain unresolved, and directly copied native payment fields must agree with the projected transition. This schema is scoped to the inspected runtime; new fields require inspection. Native item preflight runs after selection: a provably skipped unsupported item does not block a technique, while an unknown selection or an unsupported selected item still prevents certification.

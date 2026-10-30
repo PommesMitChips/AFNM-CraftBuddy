@@ -5,7 +5,7 @@ description: CraftBuddy runtime integration workflow. Activate for src/modConten
 
 # CraftBuddy Runtime Integration
 
-`src/modContent/index.ts` and neighboring modules are the only boundary between AFNM runtime objects and the optimizer/UI. Target runtime: AFNM **0.7.17-d8ae6ce**.
+`src/modContent/index.ts` and neighboring modules are the only boundary between AFNM runtime objects and the optimizer/UI. Historical evidence targets **0.7.17-d8ae6ce**; the October audit inspected **0.7.18-97c093b**.
 
 Reach the optimizer only through `src/optimizer/index.ts`. If something is missing from the barrel, add it there rather than importing a submodule.
 
@@ -98,6 +98,7 @@ Add focused tests for controller state, replay parity, or integration regression
 - Preserve scaling multipliers/rounding, buff `additionalVariables`, and `setState.keys`; general triggered effects are not limited to `setState`.
 - Hydrate and clone `returningCycle` (`charges`, `storedQi`, fixed `chargeSize`, `pulseKey`, `lastOutcome`) without resetting it on a poll; replay includes the same state and the ordinary Returned Precision definition.
 - Native auto-use still precedes technique dispatch. Do not bypass the in-game hook when a loadout is active.
+- Preserve `nativeTechnique` through worker/replay transport and recommendation identity. Workers enforce its first-action, minimum-stability and max-stack gates locally; a live canUseAction callback is an additional veto, not a substitute for the modeled gates. Unknown native payloads and unresolved active buff definitions must remain uncertified.
 
 ## References
 
