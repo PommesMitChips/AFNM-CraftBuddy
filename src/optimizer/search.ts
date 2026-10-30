@@ -204,6 +204,9 @@ export interface SearchResult {
   alternativeSkills: SkillRecommendation[];
   isTerminal: boolean;
   targetsMet: boolean;
+  /** Root coverage is separate from continuation uncertainty. Incomplete
+   * partitions cannot publish or merge an actionable partial ranking. */
+  rootEvaluation?: { complete: boolean; evaluatedSkillKeys: string[] };
   /**
    * Outcome the searched-from state is on track for. Optional so older replay
    * snapshots and hand-built fixtures stay valid; consumers must degrade to a

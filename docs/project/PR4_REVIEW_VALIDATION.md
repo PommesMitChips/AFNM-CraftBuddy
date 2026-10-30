@@ -264,3 +264,17 @@ Revera reported no new accepted finding with partial coverage. Three Cubic docum
 ### Tenth-follow-up validation
 
 This follow-up changes documentation and tests only. **Six focused suites / 225 tests passed**, covering all four flags through JSON replay/worker transport, numeric certification, Celadon Cycle, PRD carry and state-identity boundaries. Strict TypeScript and production build passed with the three existing webpack size warnings. Local compiled-worker artifact checks and all **96 native-function Celadon comparisons** passed. The production mod.js SHA-256 remains **42D6EBC7C6A4CE0F2D2376C3CD01F2B4D53DF275379CCE68DF3E4A079EA7421B**, identical to the validated b5acbb7 Celadon build. The prior full 59-suite / 1,358-test and Rust results remain historical evidence, not fresh full runs for this test/documentation-only update. Documentation checks passed. The package remains version 6.9.0.
+
+## Eleventh review follow-up (finding on d5fec94)
+
+Revera reported one accepted finding with partial review coverage. Cubic reported no new inline finding on this head.
+
+| Review comment | Finding | Disposition and evidence |
+| --- | --- | --- |
+| 4426264372 | Worker partitions spend budget on every root before filtering | Fixed. Apply assigned root keys before payload validation, availability checks and transition work. An empty partition spends no expansion budget; later roots can use their own partition budget. Deeper continuations retain the full roster, and restricted root action lists never populate the full continuation cache. Completed eligible root evaluations survive exhaustion as explicit rootEvaluation diagnostics, including in JSON replay output. An incomplete root still publishes no actionable partial ranking: an unexamined root might be the guaranteed alternative to a gamble. Merging any exhausted partition preserves that pause and clears candidate alternatives and final-state previews. |
+
+Nine committed regressions cover late/empty partitions, a four-partition shallow safe selection, genuine exhaustion, cancellation, merged refusal with and without a budget diagnostic, cross-partition continuation skills, replay diagnostics and a late-partition fourth-ember Celadon finish. The shallow comparison uses equal total root work; it does not claim that differently budgeted multi-worker searches produce identical deeper policies.
+
+### Eleventh-follow-up validation
+
+Full Jest: **60 suites / 1,384 tests passed**. Strict TypeScript and the 6.9.0 production build passed with the three existing webpack size warnings. The compiled-worker artifact passed real partition-index checks for assigned root budgets, complete and incomplete merges, full continuation access and the exact fourth-ember Celadon finish. Earlier compiled-worker safety probes also passed. All **96 isolated Celadon comparisons** against extracted native functions passed. Seven fixed-node-budget production replay picks, planning fields and explored-node counts remained identical to d5fec94. Documentation checks passed. No simulator arithmetic or Rust code changed; prior Rust/corpus results remain historical and were not rerun. These checks do not establish live acceptance of the player's full Ashglass Ward loadout.

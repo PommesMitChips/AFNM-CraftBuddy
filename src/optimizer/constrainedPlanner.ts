@@ -182,6 +182,12 @@ export function constrainedSearch(
   const memo = new Map<string, Policy>();
   const transitions = new Map<string, Action[]>();
   const inertRootActions: SkillDefinition[] = [];
+  const rootKeys =
+    settings.rootSkillKeys === undefined
+      ? undefined
+      : new Set(settings.rootSkillKeys);
+  const evaluatedRootSkillKeys: string[] = [];
+  let rootBudgetExhausted = false;
   const goalBias =
     clampSearchGoalPriorityBias(settings.goalPriorityBias ?? 0) / 100;
   const check = () => {
@@ -345,9 +351,10 @@ export function constrainedSearch(
         identity(after) === original,
     );
   };
-  const expand = (node: NodeState): Action[] => {
+  const expand = (node: NodeState, atRoot = false): Action[] => {
     const key = stateKey(node),
-      cached = transitions.get(key);
+      // A filtered or partial root must never poison the full continuation cache.
+      cached = atRoot ? undefined : transitions.get(key);
     if (cached) {
       hits++;
       return cached;
@@ -358,6 +365,7 @@ export function constrainedSearch(
     // first so unsupported data is reported as unknown, not silently evaluated.
     let native: ReturnType<typeof projectNativeAutoUseBranches> | undefined;
     for (const skill of config.skills) {
+      if (atRoot && rootKeys && !rootKeys.has(skill.key)) continue;
       if (skill.actionKind === 'finish') continue;
       const effects = getConditionEffectsForConfig(config, node.condition);
       const unsupportedReason = getUnsupportedTransitionReason(
@@ -380,7 +388,13 @@ export function constrainedSearch(
         )
       )
         continue;
-      check();
+      try {
+        check();
+      } catch (error) {
+        if (!atRoot || !(error instanceof SearchBudgetReached)) throw error;
+        rootBudgetExhausted = true;
+        break;
+      }
       nodes++;
       const before = unsupportedReason
         ? { outcomes: [], unresolvedProbability: 1, unsupportedReason }
@@ -503,15 +517,11 @@ export function constrainedSearch(
           });
         }
       }
+      if (atRoot) evaluatedRootSkillKeys.push(skill.key);
       if (!action.children.length && action.unresolved === 0) continue;
       if (isInertRecovery(node, action)) {
         pruned++;
-        if (
-          node.state === state &&
-          (!settings.rootSkillKeys ||
-            settings.rootSkillKeys.includes(skill.key))
-        )
-          inertRootActions.push(skill);
+        if (atRoot) inertRootActions.push(skill);
         continue;
       }
       action.immediate = combine(
@@ -525,7 +535,7 @@ export function constrainedSearch(
         comparePlanningValues(a.immediate, b.immediate) ||
         a.skill.key.localeCompare(b.skill.key),
     );
-    transitions.set(key, actions);
+    if (!atRoot) transitions.set(key, actions);
     return actions;
   };
   const solve = (node: NodeState, remaining: number): Policy => {
@@ -591,15 +601,10 @@ export function constrainedSearch(
   let actions: Action[] = [];
   let policies: Policy[] = [];
   let completed = 0;
-  let rootBudgetExhausted = false;
   let unresolvedActions: Action[] = [];
   if (!reached(state) && !ended(state)) {
     try {
-      actions = expand(root).filter(
-        (a) =>
-          !settings.rootSkillKeys ||
-          settings.rootSkillKeys.includes(a.skill.key),
-      );
+      actions = expand(root, true);
     } catch (error) {
       if (!(error instanceof SearchBudgetReached)) throw error;
       rootBudgetExhausted = true;
@@ -607,7 +612,11 @@ export function constrainedSearch(
     // Root outcomes must be evaluated for every action before claiming a ranking.
     unresolvedActions = actions.filter((action) => action.unresolved >= 1e-10);
     actions = actions.filter((action) => action.unresolved < 1e-10);
-    policies = actions.map((action) => ({ action, value: action.immediate }));
+    // Keep completed diagnostics on a truncated root, but never publish its
+    // partial ranking: an unevaluated action may be the guaranteed alternative.
+    policies = rootBudgetExhausted
+      ? []
+      : actions.map((action) => ({ action, value: action.immediate }));
     if (policies.length) completed = 1;
     for (let d = 2; d <= horizon && policies.length; d++) {
       try {
@@ -823,6 +832,10 @@ export function constrainedSearch(
     alternativeSkills: recommendations.slice(1),
     isTerminal: ended(state),
     targetsMet: reached(state),
+    rootEvaluation: {
+      complete: !rootBudgetExhausted,
+      evaluatedSkillKeys: evaluatedRootSkillKeys,
+    },
     outcomeProjection: projection,
     expectedFinalState: finalPreview(),
     optimalRotation: rotation.map((s) => s.name),
@@ -836,6 +849,7 @@ export function constrainedSearch(
               ...config,
               skills: config.skills.filter(
                 (skill) =>
+                  (!rootKeys || rootKeys.has(skill.key)) &&
                   !getUnsupportedTransitionReason(
                     state,
                     skill,

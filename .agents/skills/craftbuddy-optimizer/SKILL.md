@@ -46,6 +46,7 @@ Use this before touching recommendation behavior. `docs/project/OPTIMIZER_DESIGN
 
 - Production uses a bounded sparse AND/OR graph with chance-aware Bellman backups. Action coverage and unresolved branches must remain explicit.
 - Worker merge uses the same `recommendation.planning` fields as local selection, never raw-score sorting that discards safety precedence.
+- Apply root partitions before expansion work; keep the full roster for continuations and never cache a restricted root as a full continuation. Preserve incomplete `rootEvaluation` coverage across worker merge and replay diagnostics. A partial root ranking cannot become executable merely because another worker returned a candidate.
 - First-action validation must agree with the selected policy; do not add contradictory recommendation-only heuristics.
 - `buildOrderedMoveCandidates` and beam heuristics are legacy code. Tests of that path do not establish production planner correctness.
 

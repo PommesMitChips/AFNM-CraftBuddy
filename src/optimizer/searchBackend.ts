@@ -319,8 +319,9 @@ function recomputeQualityRatings(candidates: SkillRecommendation[]): void {
 /**
  * Reassemble the per-partition results into one result. Deterministic given
  * the same partials: candidates from every partition are pooled, deduped by
- * skill key, sorted by score with a key tiebreak, and quality ratings are
- * recomputed over the merged range (they are relative to the candidate set).
+ * skill key and ordered by planning safety (legacy results use score), with
+ * relative quality ratings recomputed over the merged set. Incomplete root
+ * coverage keeps the entire result paused, even if another partition has a pick.
  */
 export function mergePartitionedResults(
   partials: readonly SearchResult[],
@@ -328,6 +329,25 @@ export function mergePartitionedResults(
   if (partials.length === 1) {
     return partials[0];
   }
+
+  const incompleteRoot = partials.some(
+    (partial) =>
+      partial.rootEvaluation?.complete === false ||
+      partial.blockedReasons?.some((reason) => reason.reason === 'budget'),
+  );
+  const rootEvaluation =
+    incompleteRoot || partials.some((partial) => partial.rootEvaluation)
+      ? {
+          complete: !incompleteRoot,
+          evaluatedSkillKeys: Array.from(
+            new Set(
+              partials.flatMap(
+                (partial) => partial.rootEvaluation?.evaluatedSkillKeys ?? [],
+              ),
+            ),
+          ),
+        }
+      : undefined;
 
   const pooled = new Map<string, SkillRecommendation>();
   let winningPartial: SearchResult | undefined;
@@ -358,7 +378,7 @@ export function mergePartitionedResults(
   const merged = pooledCandidates.sort(compareMergedCandidates);
   recomputeQualityRatings(merged);
 
-  const anyCandidates = merged.length > 0;
+  const anyCandidates = !incompleteRoot && merged.length > 0;
   const nodesExplored = partials.reduce(
     (sum, partial) => sum + (partial.searchMetrics?.nodesExplored ?? 0),
     0,
@@ -378,31 +398,45 @@ export function mergePartitionedResults(
   const referencePartial = winningPartial ?? partials[0];
 
   return {
-    recommendation: merged[0] ?? null,
-    alternativeSkills: merged.slice(1),
+    recommendation: incompleteRoot ? null : (merged[0] ?? null),
+    alternativeSkills: incompleteRoot ? [] : merged.slice(1),
     isTerminal:
       !anyCandidates && partials.every((partial) => partial.isTerminal),
-    targetsMet: partials.some((partial) => partial.targetsMet),
+    targetsMet:
+      !incompleteRoot && partials.some((partial) => partial.targetsMet),
+    rootEvaluation,
     outcomeProjection: referencePartial?.outcomeProjection,
     blockedReasons: anyCandidates
       ? undefined
       : Array.from(
           new Map(
-            partials
-              .flatMap((partial) => partial.blockedReasons ?? [])
-              .map((reason) => [
-                JSON.stringify([
-                  reason.reason,
-                  reason.skillName,
-                  reason.details,
-                ]),
-                reason,
-              ]),
+            [
+              ...partials.flatMap((partial) => partial.blockedReasons ?? []),
+              ...(incompleteRoot
+                ? [
+                    {
+                      skillName: 'Planner',
+                      reason: 'budget' as const,
+                      details:
+                        'At least one worker did not finish its assigned root actions; automatic execution remains paused.',
+                    },
+                  ]
+                : []),
+            ].map((reason) => [
+              JSON.stringify([reason.reason, reason.skillName, reason.details]),
+              reason,
+            ]),
           ).values(),
         ),
-    optimalRotation: referencePartial?.optimalRotation,
-    optimalRotationLabels: referencePartial?.optimalRotationLabels,
-    expectedFinalState: referencePartial?.expectedFinalState,
+    optimalRotation: incompleteRoot
+      ? undefined
+      : referencePartial?.optimalRotation,
+    optimalRotationLabels: incompleteRoot
+      ? undefined
+      : referencePartial?.optimalRotationLabels,
+    expectedFinalState: incompleteRoot
+      ? undefined
+      : referencePartial?.expectedFinalState,
     searchMetrics: {
       nodesExplored,
       cacheHits,

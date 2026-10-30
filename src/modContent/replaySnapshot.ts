@@ -428,6 +428,7 @@ export function buildResultSnapshot(
       }),
     ),
     blockedReasons: result.blockedReasons ?? [],
+    rootEvaluation: result.rootEvaluation ?? null,
     optimalRotation: result.optimalRotation ?? [],
     expectedFinalState: result.expectedFinalState ?? null,
     searchMetrics: result.searchMetrics ?? null,
