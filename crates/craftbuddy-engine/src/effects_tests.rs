@@ -2,8 +2,9 @@
 //!
 //! These cover each mechanic in isolation. Cross-engine agreement is proven
 //! separately by `differential_tests.rs` against the checked-in corpus; both
-//! layers are needed, because a unit test can be wrong in the same way on both
-//! sides while a corpus case cannot.
+//! layers are useful, but agreement can preserve a shared defect. The corpus
+//! is generated from TypeScript, not the game; native-derived resource fixtures
+//! provide separate evidence for the production discrete simulator.
 
 use super::effects::*;
 use super::*;
@@ -1232,6 +1233,59 @@ fn technique_pool_and_max_stability_effects_apply() {
 // ---------------------------------------------------------------------------
 // Buffs
 // ---------------------------------------------------------------------------
+
+#[test]
+fn pool_caps_apply_to_each_change_and_not_to_spending() {
+    let mut config = base_config();
+    config.max_qi = 100.0;
+    for (initial_qi, effects, expected) in [
+        (
+            95.0,
+            json!([{ "kind": "pool", "amount": { "value": 20 } }, { "kind": "pool", "amount": { "value": -10 } }]),
+            90.0,
+        ),
+        (110.0, json!([]), 95.0),
+        (
+            110.0,
+            json!([{ "kind": "pool", "amount": { "value": 0 } }]),
+            90.0,
+        ),
+    ] {
+        let mut state = base_state();
+        state.qi = initial_qi;
+        let cost = if initial_qi == 95.0 { 10.0 } else { 5.0 };
+        if initial_qi > 100.0 {
+            state.buffs = serde_json::from_value(json!([{
+                "key": "drain", "name": "Drain", "stacks": 1,
+                "definition": { "name": "Drain", "canStack": false,
+                    "effects": [{ "kind": "pool", "amount": { "value": -10 } }] }
+            }]))
+            .unwrap();
+        }
+        let subject = skill(merge(
+            minimal_skill("pool_probe"),
+            json!({ "qi_cost": cost, "effects": effects }),
+        ));
+        let next = apply_0717(&state, subject, &config).expect("pool probe is available");
+        assert_eq!(next.qi, expected);
+    }
+}
+
+#[test]
+fn buff_pool_effects_keep_capped_restore_then_spend_order() {
+    let mut config = base_config();
+    config.max_qi = 100.0;
+    let mut state = base_state();
+    state.qi = 95.0;
+    state.buffs = serde_json::from_value(json!([{
+        "key": "pool_probe", "name": "Pool Probe", "stacks": 1,
+        "definition": { "name": "Pool Probe", "canStack": false,
+            "effects": [{ "kind": "pool", "amount": { "value": 20 } }, { "kind": "pool", "amount": { "value": -10 } }] }
+    }])).unwrap();
+    let subject = skill(merge(minimal_skill("pool_probe"), json!({ "qi_cost": 10 })));
+    let next = apply_0717(&state, subject, &config).expect("pool probe is available");
+    assert_eq!(next.qi, 90.0);
+}
 
 #[test]
 fn create_buff_respects_stack_and_max_stack_rules() {

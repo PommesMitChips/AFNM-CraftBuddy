@@ -484,6 +484,8 @@ export interface SkillGainOptions {
   /** Realized random choices for branch simulation; omitted for EV previews. */
   resolveChance?: ChanceResolver;
   successChance?: number;
+  /** Native mastery resource scope, captured before its effect list. */
+  resourceVariables?: Pick<ScalingVariables, 'pool' | 'maxpool' | 'qiBoost'>;
   /**
    * Include expected-value random factors (crit/success) in predicted gains.
    * Disable for tooltip-parity "immediate" gain previews.
@@ -2245,6 +2247,9 @@ export function calculateDisciplinedTouchGains(
     resolvedMastery = resolveMasteryBonuses(state, skill, preMasteryVars);
   }
 
+  if (options.resourceVariables) {
+    preMasteryVars = { ...preMasteryVars, ...options.resourceVariables };
+  }
   const mastery = resolvedMastery.bonuses;
   const effectiveVars: ScalingVariables = {
     ...preMasteryVars,
@@ -2427,6 +2432,9 @@ export function calculateSkillGains(
     resolvedMastery = resolveMasteryBonuses(state, skill, preMasteryVars);
   }
 
+  if (options.resourceVariables) {
+    preMasteryVars = { ...preMasteryVars, ...options.resourceVariables };
+  }
   const mastery = resolvedMastery.bonuses;
   const masteryUpgrades = resolvedMastery.upgrades;
 
@@ -3097,6 +3105,7 @@ interface ActionPhaseContext {
   barContributions: BarContribution[];
   paymentCosts?: EffectiveActionCosts;
   nativeSource?: CraftingState;
+  masteryResources?: Pick<ScalingVariables, 'pool' | 'maxpool' | 'qiBoost'>;
 }
 
 const masteryPhaseSkills = new WeakMap<
@@ -3353,6 +3362,7 @@ function evaluateMasteryPhaseCondition(
   state: CraftingState,
   config: OptimizerConfig,
   conditionEffects: ConditionEffect[],
+  resources?: ActionPhaseContext['masteryResources'],
 ): ConditionEvaluation {
   // These gates do not read any variables. In particular, unconditional and
   // chance-gated mastery blocks need no extra full action-scope construction.
@@ -3364,12 +3374,15 @@ function evaluateMasteryPhaseCondition(
   return evaluateEffectCondition(
     condition,
     state,
-    buildPreMasteryActionVariables(
-      state,
-      config,
-      conditionEffects,
-      getHarmonyStatModifiers(state.harmonyData, config.craftingType),
-    ),
+    {
+      ...buildPreMasteryActionVariables(
+        state,
+        config,
+        conditionEffects,
+        getHarmonyStatModifiers(state.harmonyData, config.craftingType),
+      ),
+      ...resources,
+    },
     0,
   );
 }
@@ -3452,6 +3465,7 @@ function expectedMasteryPayment(
         outcome.state,
         config,
         conditionEffects,
+        phase.masteryResources,
       );
       if (!condition.met || condition.probability < 1) {
         next.push({
@@ -3649,6 +3663,20 @@ export function applySkill(
     barContributions: [],
     nativeSource: working,
   };
+  if (hasMasteryEffects) {
+    const variables = getCraftingActionVariables(
+      working,
+      config,
+      conditionEffects,
+    );
+    // Native technique execution captures PF once for the mastery list, then recomputes it
+    // before payment. Resource conditions/amounts keep that captured frame.
+    context.masteryResources = {
+      pool: variables.pool,
+      maxpool: variables.maxpool,
+      qiBoost: variables.qiBoost,
+    };
+  }
   const paymentCosts = resolveChance
     ? undefined
     : expectedMasteryPayment(
@@ -3672,6 +3700,7 @@ export function applySkill(
       working,
       config,
       conditionEffects,
+      context.masteryResources,
     );
     if (!condition.met || condition.probability <= 0) continue;
     const phaseSkill = masteryPhaseSkill(
@@ -3739,7 +3768,7 @@ function applySkillTransition(
   const nextStep = state.step + (consumesTurn ? 1 : 0);
   let qiCap = getEffectiveMaxPool(state, config, resolvedActiveBuffs);
   const clampQi = (value: number): number =>
-    phase.resolveChance ? value : Math.max(0, Math.min(qiCap, value));
+    Math.max(0, Math.min(qiCap, value));
 
   // Calculate gains BEFORE applying buffs from this skill
   const gains: SkillGains =
@@ -3750,6 +3779,9 @@ function applySkillTransition(
       : calculateSkillGains(state, skill, config, conditionEffects, {
           successChance: phase.successChance,
           resolveChance: phase.resolveChance,
+          resourceVariables: phase.masteryPhase
+            ? phase.masteryResources
+            : undefined,
         });
 
   // Action-level scaling variables (carry the 0.7.10 boost stats). Pure over
@@ -3787,8 +3819,9 @@ function applySkillTransition(
 
   const mastery = resolvedActionMastery.bonuses;
   const actionMasteryUpgrades = resolvedActionMastery.upgrades;
-  const actionVars = {
+  const actionVars: ScalingVariables = {
     ...preMasteryActionVars,
+    ...(phase.masteryPhase ? phase.masteryResources : undefined),
   };
   actionVars.control *= 1 + (mastery.controlBonus || 0);
   actionVars.intensity *= 1 + (mastery.intensityBonus || 0);
@@ -3811,11 +3844,12 @@ function applySkillTransition(
   const effectiveStabilityCost = effectiveCosts.stabilityCost;
 
   // Calculate new resource values
-  let newQi = clampQi(state.qi - effectiveQiCost);
+  // Native pool spending floors at zero; it does not apply an upper cap.
+  let newQi = Math.max(0, state.qi - effectiveQiCost);
   // 0.7.7+ trigger amounts: the runtime fires `poolSpent` when the cost is
   // paid and `poolRestored` when a restore lands, each with the actual delta.
-  const qiSpentByCost = Math.max(0, state.qi - newQi);
-  let qiRestoredBySkill = 0;
+  const qiSpentByCost = state.qi - newQi;
+  let qiRestoreAmount = 0;
   const hasExplicitPoolEffect =
     Array.isArray(skill.effects) &&
     skill.effects.some((effect) => effect?.kind === 'pool');
@@ -3826,13 +3860,9 @@ function applySkillTransition(
     skill.qiRestore > 0 &&
     phase.successChance !== 0
   ) {
-    const qiBeforeRestore = newQi;
     // 0.7.10: pool restores go through the runtime's applyPool, which applies
     // the Qi Boost stat to positive amounts.
-    newQi = clampQi(
-      newQi + applyGainBoost(skill.qiRestore, actionVars.qiBoost),
-    );
-    qiRestoredBySkill = Math.max(0, newQi - qiBeforeRestore);
+    qiRestoreAmount = skill.qiRestore;
   }
 
   // Handle max stability using game's penalty system:
@@ -3880,11 +3910,13 @@ function applySkillTransition(
     newMaxStability = state.initialMaxStability;
   }
 
-  // Calculate new stability (current stability, not max)
-  let newStability = state.stability - effectiveStabilityCost + gains.stability;
-
-  // Clamp stability
-  if (!phase.paymentCosts) newStability = Math.floor(newStability);
+  // Concrete branches follow native event order. Legacy EV previews retain
+  // their weighted aggregate; they are not transition/survival certificates.
+  let newStability = phase.resolveChance
+    ? state.stability
+    : state.stability - effectiveStabilityCost + gains.stability;
+  if (!phase.resolveChance && !phase.paymentCosts)
+    newStability = Math.floor(newStability);
 
   // Handle toxicity for alchemy crafting
   let newToxicity = state.toxicity;
@@ -3977,8 +4009,6 @@ function applySkillTransition(
    */
   const recordBarChanges = needsBarContributions(config);
   const buffBarContributions: BarContribution[] = [];
-  let buffStabilityDelta = 0;
-  let buffPoolDelta = 0;
   let buffToxicityDelta = 0;
   let buffMaxStabilityDelta = 0;
   qiCap = getEffectiveMaxPool(
@@ -4067,7 +4097,10 @@ function applySkillTransition(
   ): void => {
     if (
       !Number.isFinite(amount) ||
-      amount < 0 ||
+      (amount < 0 &&
+        trigger !== 'poolSpent' &&
+        trigger !== 'poolRestored' &&
+        trigger !== 'stabilityRestored') ||
       (amount === 0 && trigger !== 'actionFailed' && !liveEvent)
     ) {
       return;
@@ -4090,8 +4123,8 @@ function applySkillTransition(
         ? getCraftingActionVariables(
             state.copy({
               buffs: newBuffs,
-              qi: newQi + techniquePoolDelta + buffPoolDelta,
-              stability: newStability + buffStabilityDelta,
+              qi: newQi,
+              stability: newStability,
               stabilityPenalty: newStabilityPenalty,
               completion: runningCompletion,
               perfection: runningPerfection,
@@ -4131,7 +4164,47 @@ function applySkillTransition(
     }
   };
 
-  let techniquePoolDelta = 0;
+  // WLc changes the real pool and publishes the actual delta synchronously.
+  // Combining changes first loses caps/floors and changes trigger order.
+  const applyPoolChange = (
+    rawAmount: number,
+    variables: ScalingVariables,
+  ): void => {
+    const before = newQi;
+    const amount = applyGainBoost(rawAmount, variables.qiBoost);
+    newQi =
+      rawAmount < 0
+        ? Math.max(0, before + amount)
+        : Math.min(variables.maxpool, before + amount);
+    dispatchBuffTriggers(
+      rawAmount < 0 ? 'poolSpent' : 'poolRestored',
+      rawAmount < 0 ? before - newQi : newQi - before,
+      0,
+      true,
+    );
+  };
+  const applyStabilityChange = (
+    amount: number,
+    variables: ScalingVariables,
+  ): void => {
+    const actual =
+      amount < 0 && phase.resolveChance
+        ? -floorCost(
+            -amount *
+              costMultiplier(
+                variables.stabilityCostReduction,
+                variables.stabilityCostPenalty,
+              ),
+          )
+        : applyGainBoost(amount, variables.stabilityBoost);
+    newStability += actual;
+    dispatchBuffTriggers(
+      amount < 0 ? 'stabilitySpent' : 'stabilityRestored',
+      amount < 0 ? -actual : actual,
+      0,
+      true,
+    );
+  };
   let techniqueMaxStabilityDelta = 0;
   let buffInvocation = 0;
   const executeBuffEffect = (
@@ -4152,7 +4225,15 @@ function applySkillTransition(
     );
     const conditionResult = realizedCondition(
       effect.condition,
-      state,
+      liveEvent
+        ? state.copy({
+            qi: newQi,
+            stability: newStability,
+            completion: runningCompletion,
+            perfection: runningPerfection,
+            buffs: newBuffs,
+          })
+        : state,
       scalingVars,
       liveOwner.stacks,
       phase.resolveChance,
@@ -4192,9 +4273,9 @@ function applySkillTransition(
         // Buff bar applications fire the same runtime triggers as technique
         // applications (e.g. Illume Crucible's onStabilize completion feeds
         // True Bifang Flame's blaze).
-        if (triggerBuffsPresent && amount > 0) {
-          const barAfter = runningCompletion + amount;
-          runningCompletion = barAfter;
+        runningCompletion += amount;
+        if (amount > 0) {
+          const barAfter = runningCompletion;
           dispatchBuffTriggers(
             'completionGained',
             amount,
@@ -4208,9 +4289,9 @@ function applySkillTransition(
         if (recordBarChanges && amount !== 0) {
           buffBarContributions.push({ bar: 'perfection', amount });
         }
-        if (triggerBuffsPresent && amount > 0) {
-          const barAfter = runningPerfection + amount;
-          runningPerfection = barAfter;
+        runningPerfection += amount;
+        if (amount > 0) {
+          const barAfter = runningPerfection;
           dispatchBuffTriggers(
             'perfectionGained',
             amount,
@@ -4220,42 +4301,10 @@ function applySkillTransition(
         }
         break;
       case 'stability':
-        buffStabilityDelta += amount;
-        if (triggerBuffsPresent && amount !== 0) {
-          dispatchBuffTriggers(
-            amount > 0 ? 'stabilityRestored' : 'stabilitySpent',
-            Math.abs(amount),
-            0,
-            liveEvent,
-          );
-        }
+        applyStabilityChange(rawAmount, scalingVars);
         break;
       case 'pool':
-        if (liveEvent) {
-          // Native WLc caps each payout before publishing its actual delta.
-          // Preserve that delta (including zero at cap) for downstream hooks.
-          const before = newQi + techniquePoolDelta + buffPoolDelta;
-          const after = Math.max(
-            0,
-            Math.min(scalingVars.maxpool, before + amount),
-          );
-          const delta = after - before;
-          buffPoolDelta += delta;
-          dispatchBuffTriggers(
-            amount >= 0 ? 'poolRestored' : 'poolSpent',
-            amount >= 0 ? delta : -delta,
-            0,
-            true,
-          );
-          break;
-        }
-        buffPoolDelta += amount;
-        if (triggerBuffsPresent && amount !== 0) {
-          dispatchBuffTriggers(
-            amount > 0 ? 'poolRestored' : 'poolSpent',
-            Math.abs(amount),
-          );
-        }
+        applyPoolChange(rawAmount, scalingVars);
         break;
       case 'maxStability':
         buffMaxStabilityDelta += amount;
@@ -4339,6 +4388,23 @@ function applySkillTransition(
     }
   };
 
+  // Payment precedes success effects, including resource handlers it invokes.
+  if (effectiveQiCost > 0)
+    dispatchBuffTriggers('poolSpent', qiSpentByCost, 0, true);
+  if (phase.resolveChance) newStability -= effectiveStabilityCost;
+  if (effectiveStabilityCost > 0)
+    dispatchBuffTriggers('stabilitySpent', effectiveStabilityCost, 0, true);
+  if (qiRestoreAmount > 0) applyPoolChange(qiRestoreAmount, actionVars);
+  if (phase.resolveChance && !skill.effects?.length && gains.stability !== 0) {
+    newStability += gains.stability;
+    dispatchBuffTriggers(
+      gains.stability > 0 ? 'stabilityRestored' : 'stabilitySpent',
+      Math.abs(gains.stability),
+      0,
+      true,
+    );
+  }
+
   if (actionSuccessChance > 0 && skill.effects && skill.effects.length > 0) {
     for (const [effectIndex, effect] of skill.effects.map(
       (effect, i) => [i, effect] as const,
@@ -4357,6 +4423,18 @@ function applySkillTransition(
       if (factor <= 0) continue;
 
       switch (effect.kind) {
+        case 'stability': {
+          if (!phase.resolveChance) break;
+          const amount =
+            evaluateScalingWithMasteryUpgrades(
+              effect.amount,
+              actionMasteryUpgrades,
+              actionVars,
+              0,
+            ) * factor;
+          applyStabilityChange(amount, actionVars);
+          break;
+        }
         case 'pool': {
           // Runtime routes positive pool effects through applyPool, which
           // applies the 0.7.10 Qi Boost stat to the restored amount.
@@ -4367,10 +4445,7 @@ function applySkillTransition(
               actionVars,
               0,
             ) * factor;
-          techniquePoolDelta +=
-            poolAmount > 0
-              ? applyGainBoost(poolAmount, actionVars.qiBoost)
-              : poolAmount;
+          applyPoolChange(poolAmount, actionVars);
           break;
         }
         case 'maxStability':
@@ -4415,23 +4490,8 @@ function applySkillTransition(
   // Fire the cost/technique triggers before per-turn buff effects run,
   // matching the runtime order (costs, technique effects, then buff effects).
   if (triggerBuffsPresent) {
-    if (qiSpentByCost > 0) {
-      dispatchBuffTriggers('poolSpent', qiSpentByCost);
-    }
-    if (qiRestoredBySkill > 0) {
-      dispatchBuffTriggers('poolRestored', qiRestoredBySkill);
-    }
-    if (techniquePoolDelta > 0) {
-      dispatchBuffTriggers('poolRestored', techniquePoolDelta);
-    } else if (techniquePoolDelta < 0) {
-      dispatchBuffTriggers('poolSpent', -techniquePoolDelta);
-    }
-    if (effectiveStabilityCost > 0) {
-      dispatchBuffTriggers('stabilitySpent', effectiveStabilityCost);
-    }
-    if (gains.stability > 0) {
+    if (!phase.resolveChance && gains.stability > 0)
       dispatchBuffTriggers('stabilityRestored', gains.stability);
-    }
     // Bar applications fire per application in runtime order; True Bifang
     // Flame keys blaze on the largest single-application percentGained.
     const triggerBarContributions =
@@ -4474,6 +4534,11 @@ function applySkillTransition(
     }
   }
 
+  if (!triggerBuffsPresent) {
+    runningCompletion += gains.completion;
+    runningPerfection += gains.perfection;
+  }
+
   if (phase.resolveChance && !phase.masteryPhase && actionSuccessChance === 0)
     dispatchBuffTriggers('actionFailed', 0);
 
@@ -4484,11 +4549,24 @@ function applySkillTransition(
       if (!phase.existingBuffNames.has(buffKey)) continue;
       const liveBuff = newBuffs.get(buffKey);
       if (!liveBuff?.definition) continue;
+      const resourceVariables = getCraftingActionVariables(
+        state.copy({
+          qi: newQi,
+          buffs: newBuffs,
+          stability: newStability,
+          stabilityPenalty: newStabilityPenalty,
+          completion: runningCompletion,
+          perfection: runningPerfection,
+        }),
+        config,
+        conditionEffects,
+      );
       const scalingVars: ScalingVariables = {
         ...actionVars,
         roomEffectiveness: 0,
         pool: newQi,
-        maxpool: qiCap,
+        maxpool: resourceVariables.maxpool,
+        qiBoost: resourceVariables.qiBoost,
         toxicity: newToxicity,
         maxtoxicity: config.maxToxicity || 0,
         poolCostFlat: state.poolCostFlat,
@@ -4549,7 +4627,6 @@ function applySkillTransition(
     state.perfection,
     gains.perfection + buffPerfection,
   );
-  newQi = clampQi(newQi + techniquePoolDelta);
 
   // Clamp to optional hard craft caps when available.
   if (
@@ -4589,8 +4666,6 @@ function applySkillTransition(
   }
 
   // Apply buff per-turn state changes
-  newStability += buffStabilityDelta;
-  newQi = clampQi(newQi + buffPoolDelta);
   newToxicity = Math.max(0, newToxicity + buffToxicityDelta);
   if (buffMaxStabilityDelta !== 0) {
     const effectiveBuffMaxStabilityDelta =
@@ -4603,6 +4678,19 @@ function applySkillTransition(
     );
     const newMax = state.initialMaxStability - newStabilityPenalty;
   }
+
+  // Native processTurn captures its cleanup cap after buff execution and
+  // before harmony. Masteries and items do not perform turn cleanup.
+  qiCap = getEffectiveMaxPool(
+    state.copy({
+      qi: newQi,
+      buffs: newBuffs,
+      completion: newCompletion,
+      perfection: newPerfection,
+    }),
+    config,
+    newBuffs,
+  );
 
   // Process harmony effects for sublime crafts (runs in processTurn after technique)
   let newHarmony = state.harmony;
@@ -4693,8 +4781,9 @@ function applySkillTransition(
     }
   }
 
-  if (phase.resolveChance && !phase.masteryPhase)
-    newQi = Math.max(0, Math.min(qiCap, Math.floor(newQi)));
+  if (!phase.masteryPhase && consumesTurn) {
+    newQi = clampQi(phase.resolveChance ? Math.floor(newQi) : newQi);
+  }
   // Create new state with all updates
   if (
     consumesTurn &&
@@ -4710,7 +4799,7 @@ function applySkillTransition(
   );
   if (!phase.masteryPhase)
     newStability = clampStabilityToBounds(
-      newStability,
+      phase.resolveChance ? Math.floor(newStability) : newStability,
       state.initialMaxStability - newStabilityPenalty,
     );
   if (recordBarChanges && !consumesTurn) {

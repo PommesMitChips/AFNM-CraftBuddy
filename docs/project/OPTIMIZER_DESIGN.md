@@ -4,7 +4,7 @@ status: active
 authoritative: true
 owner: craftbuddy-maintainers
 game_version: 0.7.17-d8ae6ce
-last_verified: 2026-10-30
+last_verified: 2026-10-31
 source_of_truth: src/optimizer/outcome.ts, src/optimizer/search.ts, src/optimizer/constrainedPlanner.ts, src/optimizer/searchBackend.ts, src/optimizer/skills.ts, src/optimizer/stochastic.ts, src/optimizer/transitionValidation.ts, src/optimizer/nativeAvailability.ts, src/optimizer/state.ts, src/optimizer/index.ts
 review_cycle_days: 30
 related_files:
@@ -175,3 +175,11 @@ The four `stackGained.<Ember>` events used by Flickering Celadon Flame are model
 The payout uses the live effect data (currently 10% maximum Qi and 10 stability), boost stats, caps and native per-event/per-owner re-entry guard. Qi-restored hooks receive the actual capped delta, including zero; downstream hooks see the current payout state. Negative buff `createBuff` effects consume stacks even from non-stacking embers. Normal maximum-stability decay and stability overdraft remain intact. Failed techniques still execute their action-type buff effects.
 
 Certification accepts only the verified Celadon stack-gain block shape: the all-four-embers condition, maximum-Qi/literal-stability payout, and one consumption of each ember. Other stack events, stack-loss listeners and unverified stack-trigger programs remain unresolved. This is scoped support for the native Celadon mechanic, not a blanket relaxation of trigger validation. No planner score or risk ordering was changed.
+
+### Resource boundaries and event order
+
+Qi and stability do not share a clamping rule. Each pool operation applies its native floor or cap before its handler runs; a mastery cannot carry excess restored Qi into payment. Resource handlers receive actual deltas, including zero and native signed edge cases. Stability debt survives payment and restoration until final action cleanup. Concrete changes execute in native order, while retained EV stability calculations remain weighted previews.
+
+Masteries capture pool/maxpool/Qi-boost variables for their effect list, then payment obtains fresh stats. Buff effects and resource events use current resource state. Items do not perform a technique turn's final Qi flooring. The native-derived oracle and phase tests cover these boundaries without changing policy comparison or search budgets.
+
+Progress gains still have a reconstruction boundary. Certification rejects affected live progress checks, resource callbacks requiring an unmodeled intermediate bar value, cross-mastery captured-progress observations and unsupported bar-trigger subscription changes within a block. Such actions stay unresolved and cannot supply a probability-one route or final-state preview. Captured expressions and ordinary stat-buff frames, including Strive for Perfection and False Fusion, remain eligible. Known Celadon blocks remain eligible; unrelated unsupported orderings are not silently approximated into certificates.

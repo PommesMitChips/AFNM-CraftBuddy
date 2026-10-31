@@ -4,7 +4,7 @@ status: active
 authoritative: true
 owner: craftbuddy-maintainers
 game_version: 0.7.18-97c093b
-last_verified: 2026-10-30
+last_verified: 2026-10-31
 source_of_truth: src/__tests__/prReviewRegressions.test.ts, src/__tests__/nativeAutoUsePlan.test.ts, docs/project/RUNTIME_EVIDENCE.md
 review_cycle_days: 90
 related_files:
@@ -292,3 +292,38 @@ Validation exposed two pre-existing legacy-search checks that also failed in iso
 ### Twelfth-follow-up validation
 
 The full run exercised **60 suites / 1,386 tests**: **1,384 passed**, with only the two timing failures described above. Both corrected tests passed in a focused rerun; no single all-green full rerun is claimed. The new arrival-order regressions, Celadon Cycle and prior merge regressions also passed together (**3 focused suites / 62 tests**). Strict TypeScript, formatting, documentation checks and the 6.9.0 production build passed (three existing webpack size warnings). Generated-worker partition/safety probes and all **96 isolated Celadon native-function comparisons** passed. Production changes only canonicalize diagnostics; no simulation arithmetic, policy comparison, runtime search budgets or Rust code changed. Earlier benchmark/Rust evidence remains historical; neither was rerun for this presentation-only change. No live-game acceptance is claimed.
+
+## Thirteenth review follow-up (finding on 7208130)
+
+Revera finding **4428274494** is valid. With Qi 95/max 100, a mastery restoring 20 must leave 100 before the technique pays 10, hence 90 afterward. The discrete simulator instead deferred the cap, left 100 after final cleanup, and could certify a subsequent 100-Qi finisher. The new regression checks the intermediate state, follow-up availability, goal probability and absence of a false deterministic preview.
+
+### Origin and review failure
+
+| Defect | Origin | Evidence |
+| --- | --- | --- |
+| Deferred Qi cap with a chance resolver | Introduced by our planner rewrite in c132693 | That commit changed the unconditional Qi clamp to bypass it whenever a resolver was present. Stability needed deferred clamping; Qi has different rules. |
+| Worker root filtering after expansion | Introduced with the new planner in c132693; fixed in e75fd13 | Budget was spent before applying rootSkillKeys. |
+| Arrival-ordered root coverage diagnostics | Introduced with rootEvaluation in e75fd13; fixed in 7208130 | Permutation tests were missing from the original coverage change. |
+| Aggregated technique pool effects | Predates the fork and v6.8.0, introduced in 903f10d | Netting restoration and spending loses per-operation caps, floors and event deltas. |
+
+The recent failures are a mixture of introduced regressions and inherited modeling gaps. The local review process was too narrow: targeted fixes and passing suite counts did not establish native phase fidelity. The historical Rust corpus is generated from TypeScript, so agreement can retain the same mistake. This follow-up adds independent native-derived expectations and negative certification tests rather than treating cross-engine agreement as proof of game correctness.
+
+### Resource audit and repair
+
+Pool changes now apply in order and dispatch actual deltas synchronously, including zero and signed deltas permitted by the native applier. Spending floors at zero; restoration applies its captured cap; final turn cleanup is separate. Mastery pool/maxpool/Qi-boost fields retain the native captured frame, payment recomputes its frame, and buff/resource handlers read current state. Item transitions retain fractional pool values until a technique turn ends. Raw operation sign is retained when negative boosts change the effective gain.
+
+Concrete stability changes remain ordered with Qi events: Qi payment precedes stability payment, and later stability restoration cannot be visible to an earlier pool handler. Stability debt remains unclamped until the appropriate action boundary. Legacy EV stability projections retain their historical weighting and are not certificates. The Rust EV helper mirrors the numerical pool-boundary corrections; the regenerated historical corpus changes **24 Qi expectations** in over-cap starting-state cases, with no remaining stability changes.
+
+The sweep also reproduced unsupported intermediate progress observations and bar-listener creation/removal order. Those compound programs now produce unresolved diagnostics rather than a false complete route. Ordinary Celadon Cycle remains supported. This is a deliberate conservative boundary, not a claim that arbitrary effect programs have been fully modeled.
+
+The committed oracle contains **1,440 native WLc cases** across mastery, technique, buff and item contexts, cap/underflow boundaries, zero changes, fractional amounts and positive/negative boosts. Tests also compare encoded event order, actual deltas and the observed pool. The generator executes only the SHA-256-verified native function and imports no optimizer code. Its caller ordering is explicit and isolated; it does not bootstrap the full game or prove unrelated stats, formulas, harmonies or complete character/loadout parity.
+
+Positive controls preserve captured progress expressions and ordinary Strive for Perfection / False Fusion stat frames. The guard distinguishes these from native live-progress checks and fresh callback observations; it does not reject stat buffs merely because their formulas mention a progress bar. All seven sampled production replays retain their recommendations and planning fields at an equal 500-node budget, without hitting the 120-second time guard. Earlier 2,000-node probes hit wall-clock limits and are not used as fixed-work equivalence evidence. Timing varied under local load and is not presented as a throughput benchmark or a global quality guarantee.
+
+Two historical harmony assertions subtracted the stray penalty from an already-capped baseline. Native spending occurs before turn cleanup: an initial 200 Qi, cap 194 and 15-Qi stray loss leave 185, not 179. Those expectations now use the original pool and the final cap, with the harmony penalties retained. No scoring constant or production budget was changed.
+
+### Thirteenth-follow-up validation
+
+The final, uninterrupted release run passed **62 Jest suites / 2,863 tests** on the final source. Strict TypeScript, formatting, documentation checks and the 6.9.0 production build passed (three existing webpack size warnings). Rust passed **96 tests**, with **3 profiling tests intentionally ignored**; the WASM helper was rebuilt and inlined. The historical corpus remains 178 scenarios / 1,555 transitions, with the 24 documented Qi corrections.
+
+The generated worker rejects the false 100-Qi continuation, retains the funded 90-Qi route, preserves fractional-item continuations and ordinary False Fusion frames, and pauses unsupported progress ordering. Previous worker partition, native-field, hidden-PRD, preview and goal checks pass. All **96 isolated native Celadon comparisons** pass, alongside the committed **1,440 native pool expectations**. Seven equal-500-node production replay recommendations and planning fields match 7208130. These scoped checks do not establish exhaustive native parity or replace in-game acceptance.

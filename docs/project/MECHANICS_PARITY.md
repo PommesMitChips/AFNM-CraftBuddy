@@ -265,3 +265,11 @@ Stated plainly rather than tracked as pending work:
 - exact hidden RNG stream replication (not exposed by the game)
 - modelling every non-technique item family without normalized runtime payloads
 - combat-side systems, including the combat auto-use path
+
+## Resource transition audit, 0.7.18
+
+Qi restoration is capped at each application; spending floors at zero and does not apply an upper cap. Native resource handlers observe the actual delta at that point in the action. Stability retains debt until action cleanup. Mastery resource frames, fresh payment/buff/event frames and item-versus-turn cleanup are distinct boundaries. The production discrete simulator now follows those resource operations in order, including boost/sign and fractional cases.
+
+The independent native pool oracle contains 1,440 cases and a hash-checked regeneration script. This establishes scoped resource-applier evidence, not full game equivalence. The historical Rust EV corpus remains an implementation-agreement check; 24 over-cap-state Qi expectations changed with the spending/cleanup repair. EV stability weighting remains historical and cannot certify a stochastic route.
+
+Intermediate progress dependencies and bar-listener subscription changes that the reconstructed bar model cannot order reliably are explicitly unresolved. The validated Celadon Cycle remains supported. See [the review report](PR4_REVIEW_VALIDATION.md#thirteenth-review-follow-up-finding-on-7208130) for origin analysis, reproductions and final validation results.

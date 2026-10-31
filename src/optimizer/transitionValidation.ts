@@ -159,6 +159,44 @@ export function findUnsupportedCraftingPayload(
 ): string | undefined {
   const doneBuffs = new Set<object>(),
     visiting = new Set<object>();
+  // Progress gains are reconstructed after a technique block. Never certify
+  // programs whose later effects/callbacks depend on intermediate bar values.
+  const progressPatterns = {
+    completion: /\bcompletion(?:_?percentage)?\b/i,
+    perfection: /\bperfection(?:_?percentage)?\b/i,
+  };
+  type ProgressBar = keyof typeof progressPatterns;
+  const bars: ProgressBar[] = ['completion', 'perfection'];
+  function readsProgress(
+    value: unknown,
+    bar: ProgressBar,
+    key = '',
+    includeLiveGate = true,
+  ): boolean {
+    if (typeof value === 'string')
+      return (
+        ['eqn', 'additiveEqn', 'condition', 'stat', 'scaling'].includes(key) &&
+        progressPatterns[bar].test(value)
+      );
+    if (Array.isArray(value))
+      return value.some((entry) =>
+        readsProgress(entry, bar, key, includeLiveGate),
+      );
+    if (!value || typeof value !== 'object') return false;
+    const object = value as Record<string, unknown>;
+    if (includeLiveGate && key === 'condition' && object.kind === bar)
+      return true;
+    if (
+      key === 'initialState' &&
+      Object.values(object).some(
+        (v) => typeof v === 'string' && progressPatterns[bar].test(v),
+      )
+    )
+      return true;
+    return Object.entries(object).some(([k, v]) =>
+      readsProgress(v, bar, k, includeLiveGate),
+    );
+  }
   function enter(value: object, depth: number): void {
     if (depth > 64 || visiting.has(value))
       fail('Unsupported cyclic or excessively deep crafting payload');
@@ -345,6 +383,90 @@ export function findUnsupportedCraftingPayload(
         effect.kind === 'chance' ? effect.bonus : effect.multiplier,
         'condition modifier',
       );
+    }
+    const resourceProgress = new Set<ProgressBar>();
+    const barListeners = new Map<string, Set<ProgressBar>>();
+    for (const definition of Array.from(doneBuffs)) {
+      const b = record(definition, 'buff');
+      for (const value of list(b.triggeredEffects, 'triggered effects')) {
+        const block = record(value, 'trigger');
+        for (const bar of bars) {
+          if (block.trigger !== `${bar}Gained`) continue;
+          const name = normalizeIdentifier(String(b.name));
+          const listeners = barListeners.get(name) ?? new Set<ProgressBar>();
+          listeners.add(bar);
+          barListeners.set(name, listeners);
+        }
+        if (
+          [
+            'poolSpent',
+            'poolRestored',
+            'stabilitySpent',
+            'stabilityRestored',
+          ].includes(String(block.trigger))
+        )
+          for (const bar of bars)
+            if (readsProgress(block.effects, bar)) resourceProgress.add(bar);
+      }
+    }
+    const blocks = [list(skill.effects, 'technique effects')];
+    // Masteries share a captured variable frame while native progress gates
+    // can read live bars. Do not conflate those scopes across mastery blocks.
+    const masteryProgress = new Set<ProgressBar>();
+    for (const value of list(skill.masteryEntries, 'masteries')) {
+      const m = record(value, 'mastery');
+      for (const bar of Array.from(masteryProgress))
+        if (readsProgress(m, bar, '', false))
+          fail('Unsupported progress observation order across mastery blocks');
+      if (m.kind === 'effect') {
+        const effects = list(m.effects, 'mastery effects');
+        blocks.push(effects);
+        for (const value of effects) {
+          const kind = record(value, 'mastery effect').kind;
+          if (kind === 'completion' || kind === 'perfection')
+            masteryProgress.add(kind);
+        }
+      }
+    }
+    for (const block of blocks) {
+      const changed = new Set<ProgressBar>();
+      const blockBars = new Set(
+        block.map((value) => record(value, 'effect').kind),
+      );
+      for (const value of block) {
+        const e = record(value, 'effect');
+        const subscriptions =
+          e.kind === 'createBuff' || e.kind === 'consumeBuff'
+            ? barListeners.get(
+                normalizeIdentifier(String(record(e.buff, 'effect buff').name)),
+              )
+            : undefined;
+        if (
+          e.kind === 'createBuff' &&
+          subscriptions &&
+          Array.from(subscriptions).some((bar) => blockBars.has(bar))
+        )
+          fail(
+            'Unsupported progress trigger subscription order in crafting effects',
+          );
+        for (const bar of Array.from(changed)) {
+          if (
+            (e.condition != null &&
+              record(e.condition, 'condition').kind === bar) ||
+            (resourceProgress.has(bar) &&
+              ['pool', 'stability', 'createBuff'].includes(String(e.kind)))
+          )
+            fail(
+              'Unsupported intermediate progress observation order in crafting effects',
+            );
+          if (e.kind === 'consumeBuff' && subscriptions?.has(bar))
+            fail(
+              'Unsupported progress trigger subscription order in crafting effects',
+            );
+        }
+        if (e.kind === 'completion' || e.kind === 'perfection')
+          changed.add(e.kind);
+      }
     }
   } catch (error) {
     if (error instanceof UnsupportedPayload) return error.message;

@@ -3434,7 +3434,8 @@ fn apply_skill_transition(
         calculate_effective_action_costs(env, state, skill, condition_effects, active_buffs)
     });
 
-    let mut new_qi = clamp(state.qi - costs.qi_cost, 0.0, qi_cap);
+    // Spending floors at zero; the upper cap belongs to restoration/cleanup.
+    let mut new_qi = (state.qi - costs.qi_cost).max(0.0);
     // 0.7.7+ trigger amounts: the runtime fires `poolSpent` when the cost is
     // paid and `poolRestored` when a restore lands, each with the actual delta.
     let qi_spent_by_cost = (state.qi - new_qi).max(0.0);
@@ -3608,11 +3609,18 @@ fn apply_skill_transition(
                     &action_vars,
                     0.0,
                 ) * factor;
-                technique_pool_delta += if pool_amount > 0.0 {
+                let amount = if pool_amount > 0.0 {
                     apply_gain_boost(pool_amount, get_variable_value(&action_vars, "qiBoost"))
                 } else {
                     pool_amount
                 };
+                let before = new_qi + technique_pool_delta;
+                let after = if pool_amount < 0.0 {
+                    (before + amount).max(0.0)
+                } else {
+                    (before + amount).min(get_variable_value(&action_vars, "maxpool"))
+                };
+                technique_pool_delta += after - before;
             }
             "maxStability" => {
                 technique_max_stability_delta += evaluate_scaling_with_upgrades(
@@ -3974,7 +3982,13 @@ fn apply_skill_transition(
                             }
                         }
                         "pool" => {
-                            buff_pool_delta += amount;
+                            let before = new_qi + technique_pool_delta + buff_pool_delta;
+                            let after = if raw_amount < 0.0 {
+                                (before + amount).max(0.0)
+                            } else {
+                                (before + amount).min(get_variable_value(&scaling_vars, "maxpool"))
+                            };
+                            buff_pool_delta += after - before;
                             if trigger_buffs_present && amount != 0.0 {
                                 dispatch_buff_triggers(
                                     &mut buffs,
@@ -4109,7 +4123,7 @@ fn apply_skill_transition(
     buff_bar_contributions.append(&mut buffs.bar_contributions);
     let mut new_completion = state.completion + gains.completion + buff_completion;
     let mut new_perfection = state.perfection + gains.perfection + buff_perfection;
-    new_qi = clamp(new_qi + technique_pool_delta, 0.0, qi_cap);
+    new_qi += technique_pool_delta;
 
     if let Some(cap) = config.max_completion {
         if cap.is_finite() {
@@ -4141,7 +4155,7 @@ fn apply_skill_transition(
     }
 
     new_stability += buff_stability_delta;
-    new_qi = clamp(new_qi + buff_pool_delta, 0.0, qi_cap);
+    new_qi += buff_pool_delta;
     new_toxicity = (new_toxicity + buff_toxicity_delta).max(0.0);
     if buff_max_stability_delta != 0.0 {
         let effective_delta = if max_stability_sealed && buff_max_stability_delta > 0.0 {
@@ -4183,6 +4197,7 @@ fn apply_skill_transition(
         ..state.clone()
     };
 
+    qi_cap = effective_max_pool(&next, config, &next.buffs);
     if consumes_turn && !is_item && config.is_sublime_craft && config.crafting_type.is_some() {
         // Eccentric Decree reads the *post-action* bars, so this must run after
         // completion/perfection have been updated.
@@ -4283,6 +4298,9 @@ fn apply_skill_transition(
     // Preserve the expectation of chance-gated integer penalties, rather
     // than rounding their weighted average up to a certain extra loss.
     next.stability_penalty = next.stability_penalty.clamp(0.0, initial_max);
+    if !phase.mastery_phase && consumes_turn {
+        next.qi = clamp(next.qi, 0.0, qi_cap);
+    }
     if !phase.mastery_phase {
         next.stability = clamp(next.stability, 0.0, initial_max - next.stability_penalty);
     }

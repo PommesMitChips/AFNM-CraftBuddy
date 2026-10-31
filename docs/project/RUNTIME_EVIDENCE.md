@@ -4,7 +4,7 @@ status: active
 authoritative: true
 owner: craftbuddy-maintainers
 game_version: 0.7.18-97c093b
-last_verified: 2026-10-30
+last_verified: 2026-10-31
 source_of_truth: installed AFNM 0.7.18 runtime bundle; earlier sections identify their historical builds and coverage
 review_cycle_days: 90
 related_files:
@@ -1663,3 +1663,15 @@ Source tests additionally cover repeated embers, chance branches, caps, low
 stability, current maximum Qi, downstream triggers and nested-event guards.
 The historical Rust corpus is unchanged and does not establish Celadon parity;
 the production TypeScript worker is the authority for this new support.
+
+### Resource phase audit (2026-10-31, 0.7.18-97c093b)
+
+The installed artifact was rechecked through the runtime summary before this audit. Native `WLc` branches on the raw operation sign: spending floors the pool at zero without an upper cap; restoration applies Qi boost and its captured maximum. It publishes the actual state delta, including zero. Negative boosts can produce signed restoration deltas; a later spend can also report a signed delta when flooring a temporarily negative pool. These are applier semantics, not evidence that every generated probe represents a normal equipment loadout.
+
+The technique executor captures its variable frame for the mastery list, executes mastery effects, recomputes the payment frame, pays Qi and then stability, and executes successful technique effects. The buff executor captures a fresh frame per buff; event dispatch captures one per owner and retains it across that handler block. Native `RLc` retains stability debt through the action. Turn cleanup captures its pool cap after buff execution and before harmony, then performs final flooring/capping. The item executor does not perform that technique-turn cleanup.
+
+The independent generator [generate-qi-resource-oracle.cjs](../../scripts/optimizer/generate-qi-resource-oracle.cjs) accepts the audited pretty bundle and refuses a changed `WLc` hash. It imports no simulator code. [qiResourceOracle.json](../../src/__tests__/fixtures/qiResourceOracle.json) records 1,440 literal expectations and the source-function SHA-256. The matrix covers four caller phases, two initial pools, five boost values and two ordered operations drawn from six amounts. Observer values are doubled before encoding so native scaling rounding does not erase fractional deltas. The generated expectations are checked in [qiPhaseSafety.test.ts](../../src/__tests__/qiPhaseSafety.test.ts).
+
+This comparison isolates the pool applier and declared caller order. Separate regressions cover live/captured frames, payment observers, item continuation, chance branches and rejection of unsupported progress-dependent sequencing. It is not full-game execution, full Rust/native equivalence or in-game acceptance of Ashglass Ward.
+
+The native condition evaluator distinguishes scope types: pool conditions and expression conditions read the captured variable frame, while native completion/perfection/stability gates read live progress. The new regression tests distinguish captured expressions from the live bar checks involved in this repair. Ordinary progress-derived stat buffs capture their values for a technique and refresh on the next action; mentioning completion/perfection in a stat formula is not by itself an unsupported mechanic.
