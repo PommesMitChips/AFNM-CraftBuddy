@@ -1,6 +1,6 @@
 {
   "name": "afnm-craftbuddy",
-  "version": "6.9.0",
+  "version": "6.9.1",
   "description": "Plans crafting toward selected completion and perfection goals using constrained stochastic search",
   "author": {
     "name": "lemon07r"
@@ -29,10 +29,11 @@
     "docs:check-authority": "bun run scripts/docs/check-authority.js",
     "docs:check": "bun run docs:check-links && bun run docs:check-freshness && bun run docs:check-authority",
     "docs:inventory": "bun run scripts/docs/generate-inventory.js",
-    "optimizer:bench": "bun run scripts/optimizer/benchmark-engines.ts",
-    "optimizer:bench:verbose": "bun run scripts/optimizer/benchmark-engines.ts --verbose",
+    "optimizer:bench": "node scripts/optimizer/planner-digest.cjs",
+    "optimizer:bench:legacy": "bun run scripts/optimizer/benchmark-engines.ts",
+    "optimizer:scenarios": "jest --runInBand generatedCrafting generatedHarmonyLoadouts plannerPerformance buffOrderPolicy upstreamSafetyAdoption",
     "optimizer:differential-corpus": "bun run scripts/optimizer/generate-differential-corpus.ts",
-    "release:validate": "bun run typecheck && bun run test && bun run build && bun run docs:check"
+    "release:validate": "bun run typecheck && bun run test && bun run optimizer:bench && bun run build && bun run docs:check"
   },
   "devDependencies": {
     "@electron/asar": "^4.3.0",

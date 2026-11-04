@@ -2868,6 +2868,7 @@ export function applySkillOutcomes(
   currentCondition?: string,
   targetPerfection = 0,
   maxOutcomes = 64,
+  shouldStop?: () => boolean,
 ): ActionOutcomeDistribution {
   const unsupportedReason = getUnsupportedTransitionReason(
     state,
@@ -2901,6 +2902,7 @@ export function applySkillOutcomes(
         },
       ),
     maxOutcomes,
+    shouldStop,
   );
   return {
     outcomes: distribution.outcomes.flatMap((o) =>
@@ -4658,11 +4660,8 @@ function applySkillTransition(
       maxStabilitySealed && techniqueMaxStabilityDelta > 0
         ? 0
         : techniqueMaxStabilityDelta;
-    newStabilityPenalty = Math.min(
-      state.initialMaxStability,
-      Math.max(0, newStabilityPenalty - effectiveTechniqueMaxStabilityDelta),
-    );
-    const newMax = state.initialMaxStability - newStabilityPenalty;
+    // Native maximum repair keeps signed headroom until action cleanup.
+    newStabilityPenalty -= effectiveTechniqueMaxStabilityDelta;
   }
 
   // Apply buff per-turn state changes
@@ -4672,11 +4671,7 @@ function applySkillTransition(
       maxStabilitySealed && buffMaxStabilityDelta > 0
         ? 0
         : buffMaxStabilityDelta;
-    newStabilityPenalty = Math.min(
-      state.initialMaxStability,
-      Math.max(0, newStabilityPenalty - effectiveBuffMaxStabilityDelta),
-    );
-    const newMax = state.initialMaxStability - newStabilityPenalty;
+    newStabilityPenalty -= effectiveBuffMaxStabilityDelta;
   }
 
   // Native processTurn captures its cleanup cap after buff execution and
@@ -4772,12 +4767,6 @@ function applySkillTransition(
     }
     if (harmonyResult.stabilityPenaltyDelta !== 0) {
       newStabilityPenalty += harmonyResult.stabilityPenaltyDelta;
-      newStabilityPenalty = Math.min(
-        newStabilityPenalty,
-        state.initialMaxStability,
-      );
-      // Reclamp stability after penalty increase
-      const newMax = state.initialMaxStability - newStabilityPenalty;
     }
   }
 
@@ -4793,10 +4782,16 @@ function applySkillTransition(
   }
   // Preserve the mean of chance-weighted penalties instead of rounding that
   // mean again (15% of a 3-point loss is 0.45, not a whole point).
-  newStabilityPenalty = Math.min(
-    state.initialMaxStability,
-    Math.max(0, newStabilityPenalty),
-  );
+  if (!phase.masteryPhase)
+    newStabilityPenalty = Math.min(
+      state.initialMaxStability,
+      Math.max(
+        0,
+        phase.resolveChance && consumesTurn
+          ? Math.ceil(newStabilityPenalty)
+          : newStabilityPenalty,
+      ),
+    );
   if (!phase.masteryPhase)
     newStability = clampStabilityToBounds(
       phase.resolveChance ? Math.floor(newStability) : newStability,

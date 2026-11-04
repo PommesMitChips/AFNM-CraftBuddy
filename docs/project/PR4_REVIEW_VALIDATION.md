@@ -4,7 +4,7 @@ status: active
 authoritative: true
 owner: craftbuddy-maintainers
 game_version: 0.7.18-97c093b
-last_verified: 2026-10-31
+last_verified: 2026-11-04
 source_of_truth: src/__tests__/prReviewRegressions.test.ts, src/__tests__/nativeAutoUsePlan.test.ts, docs/project/RUNTIME_EVIDENCE.md
 review_cycle_days: 90
 related_files:
@@ -327,3 +327,38 @@ Two historical harmony assertions subtracted the stray penalty from an already-c
 The final, uninterrupted release run passed **62 Jest suites / 2,863 tests** on the final source. Strict TypeScript, formatting, documentation checks and the 6.9.0 production build passed (three existing webpack size warnings). Rust passed **96 tests**, with **3 profiling tests intentionally ignored**; the WASM helper was rebuilt and inlined. The historical corpus remains 178 scenarios / 1,555 transitions, with the 24 documented Qi corrections.
 
 The generated worker rejects the false 100-Qi continuation, retains the funded 90-Qi route, preserves fractional-item continuations and ordinary False Fusion frames, and pauses unsupported progress ordering. Previous worker partition, native-field, hidden-PRD, preview and goal checks pass. All **96 isolated native Celadon comparisons** pass, alongside the committed **1,440 native pool expectations**. Seven equal-500-node production replay recommendations and planning fields match 7208130. These scoped checks do not establish exhaustive native parity or replace in-game acceptance.
+
+## Fourteenth follow-up: fork 6.9.1, November 4
+
+PR #4 was closed without merging; upstream selectively ported fixes and subsequently released v7.0.0. This is a maintenance release of the constrained-planner fork, not an upstream v7 merge. The installed runtime remains **0.7.18-97c093b**. Upstream tests are adopted only where their mechanics apply; their EV-specific behavior and deliberate completion-ceiling semantics do not replace this fork's joint goals and discrete certificates.
+
+### Findings on 63c5490
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| Revera: sorted buff Maps collide in exact caches | **Fixed.** Two 50% setup branches produce opposite restore/spend listener order and leave 95 versus 80 Qi for a 95-Qi finisher. The old planner certified probability one; both key-name permutations now report goal bound 0.5 and risk 0.5. Map insertion order is retained in transition, memo and inert-recovery identities. Compiled-worker transport reproduces the corrected result. |
+| Cubic: unbounded triggered mastery Qi in Rust | **Fixed.** Triggered pool operations apply their floor/cap and dispatch the actual delta. A capped 95+20 mastery before cost 10 leaves 90, not 100. Underflow is covered too. |
+| Cubic: Rust buff restoration uses pre-technique capacity | **Fixed.** The buff phase refreshes capacity after technique mutations and each pool application reads the current buff capacity. Creating +50 capacity at Qi 95 before restoring 40 yields 135, not 100. |
+| Cubic: negative stability effects must ignore cost modifiers | **Rejected.** Native `RLc` applies `floor(o_o(-amount, reduction, penalty))` to direct negative applications, including buffs. Removing it would introduce a game mismatch. Both technique and buff regressions retain a 50% reduction of a -10 loss to -5. |
+| Cubic: revert all preview pool triggers to aggregate/non-live dispatch | **Not adopted as proposed.** Immediate dispatch is necessary for deterministic native ordering too: two capped +20 operations at 95/100, each invoking a -20 listener, end at 80. Both ordinary preview and concrete transition retain that result. The retained EV API still approximates nonlinear stochastic state; it is not used to certify probabilities. Production progress readouts and safety policies use discrete children. Restoring aggregation would reintroduce demonstrated deterministic resource defects rather than establish exact stochastic previews. |
+| Cubic: carry changed bars across mastery blocks in preflight | **Rejected for the reported cross-block case.** Each completed mastery transition hands its updated bars to the next; fresh resource callbacks correctly see 50 completion/perfection from the prior block. Positive controls for both bars pass. The existing same-block intermediate-observation guard remains in force. A blanket cross-block rejection would block supported programs. |
+| Cubic: stale mechanics verification date | **Fixed.** Metadata and evidence updated to November 4. |
+
+The sorted-map identity was introduced with the constrained planner, and the two Rust cap regressions followed the previous resource patch. The newly adopted upstream maximum-repair test exposed an inherited early-clamp problem: +10 maximum repair followed by -10 maximum loss must cancel before decay, preserving stability 8 with maximum 9. Signed maximum headroom now survives phase boundaries in both engines; concrete turn cleanup also applies the native penalty ceiling. Regenerated cross-engine evidence changes 33 existing stability-penalty expectations and adds three focused resource scenarios (181 scenarios / 1,558 transitions). It is still implementation parity, not independent game proof.
+
+### Broader coverage and performance
+
+- Adopted focused upstream #21/#22 resource and survival tests: consumed discounts, mastery recovery before payment, coupled success rolls and signed maximum repair. Adapted to the fork's discrete authority.
+- Added 60 seeded synthetic recipe/loadout/stat cases against an independent exhaustive oracle. The oracle covers a deliberately small five-action subset and verifies lower bounds, including positive controls where a guaranteed immediate goal must be found.
+- Added 54 seeded multi-turn loadouts across all nine harmonies, three stat levels, Celadon on/off, varied rosters, resource budgets and 2/4/8-band caps. These are scenario coverage, not exhaustive native verification.
+- Adopted upstream #5/#16's fixed-work digest and fail-on-ceiling approach for the **production** entrypoint. All 16 existing replay recommendations and planning values match 63c5490 at 250 nodes: 14 actionable, two explicitly paused for unresolved `spirit_cauldron_construct` definitions. Missing definitions are not silently treated as harmless. These small-budget replays retain unresolved continuations and are not evidence of global optimality or completed crafts.
+- Added reviewed replay contracts, hard node-budget tests, deterministic repeats and cooperative deadline checks between branch replays. Interrupted probability mass remains unresolved and interrupted roots cannot execute. Individual synchronous transitions and native auto-use projection are not preemptible; no hard real-time guarantee is claimed.
+- Added fork CI for strict typing, full Jest/Rust tests and the replay gate; release validation includes the production replay gate. Timing is recorded separately from behavioral equality and is not claimed as a measured speedup.
+
+### Release validation
+
+The uninterrupted full Jest run passed **67 suites / 2,999 tests** in 760.523 seconds. Rust passed **98 tests**, with three profiling tests intentionally ignored. Strict TypeScript, formatting, documentation and diff checks passed. The WASM reference helper was rebuilt; the **6.9.1** production build passed with the three existing webpack size warnings.
+
+All **96 native Celadon comparisons** passed. The **1,440 native pool expectations** regenerated identically from the hash-verified function. The compiled worker reports the buff-order route as goal bound 0.5 / ending risk 0.5 without a deterministic final preview, and passes the earlier Celadon, partition, unknown-field, PRD, goal and resource regression probes. The production fixed-work gate and a repeated equal-work comparison passed all 16 reviewed replay contracts, with no behavioral differences from 63c5490 and no wall-ceiling hits. Fourteen replays are actionable and two explicitly pause; this is not a claim that all 16 crafts complete successfully.
+
+Native comparisons, synthetic scenarios and generated-worker checks remain separate from in-game UAT. The game was not launched or driven by this release task. The broad REA graph scan timed out and was stopped; no correctness claim depends on that incomplete scan. Targeted native function evidence and the unchanged installed-runtime fingerprint underpin the mechanics checks.

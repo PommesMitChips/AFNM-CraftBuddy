@@ -4,7 +4,7 @@ status: active
 authoritative: true
 owner: craftbuddy-maintainers
 game_version: 0.7.17-d8ae6ce
-last_verified: 2026-10-31
+last_verified: 2026-11-04
 source_of_truth: src/optimizer/outcome.ts, src/optimizer/search.ts, src/optimizer/constrainedPlanner.ts, src/optimizer/searchBackend.ts, src/optimizer/skills.ts, src/optimizer/stochastic.ts, src/optimizer/transitionValidation.ts, src/optimizer/nativeAvailability.ts, src/optimizer/state.ts, src/optimizer/index.ts
 review_cycle_days: 30
 related_files:
@@ -81,6 +81,8 @@ There is no actionable Finish Craft button. The legacy internal finish marker re
 
 State includes resources/caps, step, cooldowns, inventory, buffs with stacks and internal state, condition forecast and harmony. State identity must include every field affecting legality, transitions or future value.
 
+Map insertion order is part of that identity: buff dispatch follows held order, so a capped restore followed by a spend differs from the reverse sequence. Neither the transition cache nor the policy memo may sort buff Maps. `buffOrderPolicy.test.ts` reproduces two chance branches with identical buff membership but different affordable continuations.
+
 The 0.7.17 phases remain: toxicity/droplets/buff payment; capture success chance; effect masteries; recompute/pay Qi and stability; success-only effects; pre-action-name buff ticks; harmony; decay/cap cleanup. Failed actions still pay and retain mastery effects. Cost-reduction and penalty channels remain independent. Returning Cycle drains reported payment before stabilization releases charges. Planning and survival checks must share these rules.
 
 Native auto-use is a pre-technique transition, not permission to double-consume an item. Unavailable or unmodelled information must remain explicit rather than silently certifying safety.
@@ -99,6 +101,8 @@ All policies use one transitive lexicographic ordering:
 For fully resolved policies with exact probabilities, goal and premature-ending probabilities are complements, so the first two criteria agree. With unresolved outcomes or hidden PRD probabilities, the fields are conservative bounds. The ordering never switches depending on which two policies are compared. An unresolved continuation with no known ending risk can outrank a partly successful gamble; this is not proof that the continuation is feasible or globally optimal. The scoped inert-recovery guard prevents proven resource-wasting restore loops from exploiting that preference.
 
 This is not an unbounded global optimality claim. Time, node and horizon budgets limit planning. An unexpanded future or truncated action distribution contributes unresolved probability, not free success. Exact per-call state caching does not reuse stale scored entries across changed goals or runtime context.
+
+Stochastic action enumeration checks the deadline between branch replays. Interrupted mass remains unresolved, and an interrupted root remains non-executable. This is cooperative cancellation, not preemption of an individual synchronous transition or native auto-use projection. Fixed-work replay gates record wall-ceiling hits as failures rather than treating them as equivalent completed work.
 
 Worker partitions filter starting actions before validation, availability and transition expansion, so another partition's actions cannot consume their root budget. Deeper continuations still use the full skill roster. Root expansion does not populate the continuation cache with a restricted or partial action list. `rootEvaluation` records whether root enumeration finished and the keys of completed eligible action evaluations (including unresolved or pruned actions); replay output retains that diagnostic evidence. If any partition exhausts its root budget, the merged result stays paused with no actionable candidate, alternatives or final-state preview. Completed partial evaluations do not establish a ranking over unevaluated roots. This coverage flag is separate from continuation probability uncertainty, and partitioned searches with different total effort need not produce identical deeper policies.
 

@@ -4,7 +4,7 @@ status: active
 authoritative: true
 owner: craftbuddy-maintainers
 game_version: 0.7.17-d8ae6ce
-last_verified: 2026-10-22
+last_verified: 2026-11-04
 source_of_truth: src/__tests__/*, crates/craftbuddy-engine/*, package.json, scripts/docs/*, scripts/installed-game-runtime.js
 review_cycle_days: 30
 related_files:
@@ -20,11 +20,13 @@ related_files:
 
 See `AGENTS.md` for the compact command list. Key commands:
 
-- `bun run test` — full suite (budget several minutes; current counts belong in `RELEASE_NOTES_6.8.0.md`)
+- `bun run test` — full suite (allow up to 20 minutes on the Windows workstation; current evidence belongs in `PR4_REVIEW_VALIDATION.md`)
 - `bun run wasm:test` — Rust unit, effect-parity, and differential-corpus tests
 - `bun run wasm:build` — compile the Rust engine and generate the inline WASM module
 - `bun run optimizer:differential-corpus` — regenerate the cross-engine corpus
-- `bun run optimizer:bench` — replay-contract and trend comparison
+- `bun run optimizer:bench` — production planner fixed-work replay safety/ceiling gate
+- `bun run optimizer:bench:legacy` — historical EV replay contracts, not production certification
+- `npm run optimizer:scenarios` — seeded scenarios, independent oracle, budget and review regressions
 - `bun run test:watch` — watch mode
 - `bun run jest src/__tests__/<file>.test.ts` — focused file
 
@@ -33,6 +35,25 @@ Jest runs in the `node` environment and only matches `**/__tests__/**/*.test.ts`
 For validation workflow and which checks to run per change area, load the `pre-commit-validation` skill. For UI harness workflow, load `craftbuddy-ui-validation`. For runtime oracle usage, load `runtime-oracle`. For live game testing, load `live-game-testing`.
 
 ## Test ownership by area
+
+### Seeded scenarios and performance
+
+`generatedCrafting.test.ts` covers 20 seeds at weak/matched/strong stat levels (60 recipes/loadouts). A separate exhaustive finite-state oracle checks the five-action subset's discrete transitions and the recommended first action's goal lower bound through depth four. It does not import simulator or planner functions. Seeds vary completion/perfection requirements, intensity/control, Qi, stability, technique costs and gamble gains; a full-bar restore must not win without another benefit.
+
+`generatedHarmonyLoadouts.test.ts` adds 54 combinations: all nine harmonies, three stat levels, Celadon on/off, varied technique rosters, starting budgets and two/four/eight-band caps. Each executes up to four seeded branches with replanning and checks input immutability, finite resources, supported transitions and bounded work. These are synthetic mechanics-valid loadouts, not exhaustive character builds or a native oracle. The real replay snapshots remain a separate integration/performance sample.
+
+Upstream v7.0.0 tests from PRs #21/#22 are adapted in `upstreamSafetyAdoption.test.ts`: consumed discounts, mastery-before-payment, shared success rolls and signed maximum repair. Their EV-specific expectations are not copied into discrete safety tests. New cross-engine resource cases are in `fixtures/resourceReview.ts`. The existing 1,440 native pool cases and native Celadon comparisons remain separate evidence.
+
+The production digest adopts the fixed-work approach from upstream PRs #5/#16. It records every replay's recommendation, planning bounds, root coverage, pause reasons, depth, nodes and elapsed time. At the default budget it enforces the reviewed `scripts/optimizer/planner-replay-contracts.json` baseline, so newly returning no actions cannot silently pass. Pauses are counted explicitly; they are not successful crafting outcomes. A wall-ceiling hit or node overrun fails the gate. No single timing sample proves a speedup.
+
+```powershell
+node scripts/optimizer/planner-digest.cjs --revision 63c5490 --out tmp/before.json
+node scripts/optimizer/planner-digest.cjs --compare tmp/before.json --out tmp/after.json
+node scripts/optimizer/planner-digest.cjs --compare tmp/after.json --out tmp/repeat.json --require-equal
+node scripts/optimizer/planner-digest.cjs --nodes 1000 --out tmp/larger-budget.json
+```
+
+Default work is 250 action evaluations per replay and a 120-second fail-safe ceiling. Different algorithms' node counts and depth are not directly comparable units of quality. Tests enforce probability bounds and root completeness independently of throughput. CI runs typechecking, the full Jest/Rust suites and this production digest; release validation includes the digest too.
 
 | Test file | Covers |
 | --- | --- |

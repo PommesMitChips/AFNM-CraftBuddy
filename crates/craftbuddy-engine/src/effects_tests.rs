@@ -82,6 +82,52 @@ fn apply_0717(
 }
 
 #[test]
+fn review_triggered_mastery_pool_caps_before_payment() {
+    for (start, gain, cost, expected) in [(95.0, 20.0, 10.0, 90.0), (5.0, -20.0, 0.0, 0.0)] {
+        let mut state = base_state();
+        state.qi = start;
+        state.buffs = serde_json::from_value(json!([{
+            "key": "listener", "name": "Listener", "stacks": 1,
+            "definition": {"name":"Listener", "effects":[], "triggeredEffects":[{
+                "trigger":"completionGained", "effects":[{"kind":"pool", "amount":{"value":gain}}]
+            }]}
+        }]))
+        .unwrap();
+        let mut config = base_config();
+        config.max_qi = 100.0;
+        let subject = skill(merge(
+            minimal_skill("mastery"),
+            json!({
+                "qi_cost":cost, "mastery_entries":[{"kind":"effect", "effects":[{"kind":"completion", "amount":{"value":1}}]}]
+            }),
+        ));
+        assert_eq!(apply_0717(&state, subject, &config).unwrap().qi, expected);
+    }
+}
+
+#[test]
+fn review_buff_restore_uses_technique_created_pool_capacity() {
+    let mut state = base_state();
+    state.qi = 95.0;
+    state.buffs = serde_json::from_value(json!([{
+        "key":"restore", "name":"Restore", "stacks":1,
+        "definition":{"name":"Restore", "effects":[{"kind":"pool", "amount":{"value":40}}]}
+    }]))
+    .unwrap();
+    let mut config = base_config();
+    config.max_qi = 100.0;
+    let subject = skill(merge(
+        minimal_skill("capacity"),
+        json!({
+            "effects":[{"kind":"createBuff", "stacks":{"value":1}, "buff":{
+                "name":"Capacity", "canStack":false, "effects":[], "stats":{"maxpool":{"value":50}}
+            }}]
+        }),
+    ));
+    assert_eq!(apply_0717(&state, subject, &config).unwrap().qi, 135.0);
+}
+
+#[test]
 fn stability_payment_debt_survives_until_end_of_turn() {
     let mut state = base_state();
     state.stability = 1.0;

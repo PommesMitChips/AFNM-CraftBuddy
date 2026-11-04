@@ -113,10 +113,9 @@ function stateKey(node: NodeState): string {
       // nested counters are mechanics (e.g. buff internalState.history).
       if (this === node.state && (key === 'history' || key === '_cacheKey'))
         return undefined;
-      if (value instanceof Map)
-        return Array.from(value.entries()).sort(([a], [b]) =>
-          String(a).localeCompare(String(b)),
-        );
+      // Buff dispatch follows insertion order. Sorting Maps merges distinct
+      // capped resource sequences (restore then spend versus spend then restore).
+      if (value instanceof Map) return Array.from(value.entries());
       return value;
     },
   );
@@ -188,15 +187,12 @@ export function constrainedSearch(
       : new Set(settings.rootSkillKeys);
   const evaluatedRootSkillKeys: string[] = [];
   let rootBudgetExhausted = false;
+  const stopped = () =>
+    Date.now() - started >= time || !!settings.shouldAbort?.();
   const goalBias =
     clampSearchGoalPriorityBias(settings.goalPriorityBias ?? 0) / 100;
   const check = () => {
-    if (
-      nodes >= budget ||
-      Date.now() - started >= time ||
-      settings.shouldAbort?.()
-    )
-      throw new SearchBudgetReached();
+    if (nodes >= budget || stopped()) throw new SearchBudgetReached();
   };
   const progress = (s: CraftingState) => {
     const c =
@@ -432,6 +428,11 @@ export function constrainedSearch(
           node.condition,
           targetPerfection,
           64,
+          () => {
+            if (!stopped()) return false;
+            if (atRoot) rootBudgetExhausted = true;
+            return true;
+          },
         );
         distribution.probabilityUncertain ||= after.probabilityUncertain;
         distribution.unsupportedReason ??= after.unsupportedReason;

@@ -17,12 +17,16 @@ export interface Distribution<T> {
 export function enumerateDecisions<T>(
   evaluate: (resolve: ChanceResolver) => T,
   maxOutcomes = 64,
+  shouldStop?: () => boolean,
 ): Distribution<T> {
   const pending = [{ probability: 1, decisions: new Map<string, number>() }];
   const outcomes: Distribution<T>['outcomes'] = [];
   let attempts = 0;
   const limit = Math.max(1, Math.floor(maxOutcomes));
   while (pending.length && outcomes.length < limit && attempts++ < limit * 16) {
+    // Cooperate with a caller's deadline between replays. Keep every unvisited
+    // branch's mass; a time limit must never turn partial enumeration into proof.
+    if (shouldStop?.()) break;
     const branch = pending.pop()!;
     try {
       const value = evaluate((key, rawProbability) => {

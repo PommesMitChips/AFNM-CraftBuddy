@@ -2101,14 +2101,21 @@ fn dispatch_buff_triggers(
                         ))
                     }
                     "pool" => {
-                        buffs.triggered.pool += gain;
+                        let before = new_qi + buffs.triggered.pool;
+                        let after = if raw < 0.0 {
+                            (before + gain).max(0.0)
+                        } else {
+                            (before + gain).min(qi_cap)
+                        };
+                        let delta = after - before;
+                        buffs.triggered.pool += delta;
                         Some((
-                            if gain > 0.0 {
-                                "poolRestored"
-                            } else {
+                            if raw < 0.0 {
                                 "poolSpent"
+                            } else {
+                                "poolRestored"
                             },
-                            gain.abs(),
+                            if raw < 0.0 { -delta } else { delta },
                             0.0,
                         ))
                     }
@@ -3839,6 +3846,8 @@ fn apply_skill_transition(
             let Some(definition) = owner.definition.as_ref() else {
                 continue;
             };
+            // Technique effects may have created/removed a capacity buff.
+            qi_cap = effective_max_pool(state, config, buffs.as_slice());
             let mut scaling_vars = action_vars.clone();
             scaling_vars.insert("roomEffectiveness".to_string(), 0.0);
             if let Some(additional) = &definition.additional_variables {
@@ -3982,11 +3991,12 @@ fn apply_skill_transition(
                             }
                         }
                         "pool" => {
+                            let current_cap = effective_max_pool(state, config, buffs.as_slice());
                             let before = new_qi + technique_pool_delta + buff_pool_delta;
                             let after = if raw_amount < 0.0 {
                                 (before + amount).max(0.0)
                             } else {
-                                (before + amount).min(get_variable_value(&scaling_vars, "maxpool"))
+                                (before + amount).min(current_cap)
                             };
                             buff_pool_delta += after - before;
                             if trigger_buffs_present && amount != 0.0 {
@@ -4151,7 +4161,7 @@ fn apply_skill_transition(
         } else {
             technique_max_stability_delta
         };
-        penalty = (penalty - effective_delta).max(0.0).min(initial_max);
+        penalty -= effective_delta;
     }
 
     new_stability += buff_stability_delta;
@@ -4163,7 +4173,7 @@ fn apply_skill_transition(
         } else {
             buff_max_stability_delta
         };
-        penalty = (penalty - effective_delta).max(0.0).min(initial_max);
+        penalty -= effective_delta;
     }
 
     profile_count!(StateClone);
@@ -4297,7 +4307,9 @@ fn apply_skill_transition(
     }
     // Preserve the expectation of chance-gated integer penalties, rather
     // than rounding their weighted average up to a certain extra loss.
-    next.stability_penalty = next.stability_penalty.clamp(0.0, initial_max);
+    if !phase.mastery_phase {
+        next.stability_penalty = next.stability_penalty.clamp(0.0, initial_max);
+    }
     if !phase.mastery_phase && consumes_turn {
         next.qi = clamp(next.qi, 0.0, qi_cap);
     }

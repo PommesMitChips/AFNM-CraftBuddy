@@ -1,0 +1,412 @@
+{
+  "source": "Reviewed production baseline, 2026-11-04. Recommendation regressions, not a native correctness oracle.",
+  "nodeBudget": 250,
+  "cases": [
+    {
+      "fixture": "forge-heat-runway-step-2.snapshot.json",
+      "recommendation": "focus",
+      "planning": {
+        "goalProbabilityLowerBound": 0,
+        "prematureEndProbability": 0.0625,
+        "frontierProgress": 0.10450910248808663,
+        "resourceReserve": 0.22864837017609596,
+        "expectedSteps": 2,
+        "unresolvedProbability": 0.9375,
+        "transitionUnresolvedProbability": 0
+      },
+      "rootComplete": true,
+      "blockedReasons": null
+    },
+    {
+      "fixture": "forge-heat-runway-step-3.snapshot.json",
+      "recommendation": "unstable_re-energisation",
+      "planning": {
+        "goalProbabilityLowerBound": 0,
+        "prematureEndProbability": 0,
+        "frontierProgress": 0.10450910248808663,
+        "resourceReserve": 0.253648370176096,
+        "expectedSteps": 1,
+        "unresolvedProbability": 1,
+        "transitionUnresolvedProbability": 0
+      },
+      "rootComplete": true,
+      "blockedReasons": null
+    },
+    {
+      "fixture": "low-stability-regression.snapshot.json",
+      "recommendation": "forceful_stabilize",
+      "planning": {
+        "goalProbabilityLowerBound": 0,
+        "prematureEndProbability": 0,
+        "frontierProgress": 0.06135582054153766,
+        "resourceReserve": 0.9881431872111903,
+        "expectedSteps": 1,
+        "unresolvedProbability": 1,
+        "transitionUnresolvedProbability": 0
+      },
+      "rootComplete": true,
+      "blockedReasons": null
+    },
+    {
+      "fixture": "low-stability-step-before.snapshot.json",
+      "recommendation": "forceful_stabilize",
+      "planning": {
+        "goalProbabilityLowerBound": 0,
+        "prematureEndProbability": 0,
+        "frontierProgress": 0.089332718448734,
+        "resourceReserve": 0.9306321254616499,
+        "expectedSteps": 2,
+        "unresolvedProbability": 1.0000000000000002,
+        "transitionUnresolvedProbability": 0
+      },
+      "rootComplete": true,
+      "blockedReasons": null
+    },
+    {
+      "fixture": "premature-finish-proc-floor.snapshot.json",
+      "recommendation": "forceful_stabilize",
+      "planning": {
+        "goalProbabilityLowerBound": 0,
+        "prematureEndProbability": 0,
+        "frontierProgress": 0.0671108109888662,
+        "resourceReserve": 1.1146312824492857,
+        "expectedSteps": 1,
+        "unresolvedProbability": 1.0000000000000002,
+        "transitionUnresolvedProbability": 0
+      },
+      "rootComplete": true,
+      "blockedReasons": null
+    },
+    {
+      "fixture": "skyfall-bow-heat-regression.snapshot.json",
+      "recommendation": "invasive_refine",
+      "planning": {
+        "goalProbabilityLowerBound": 0,
+        "prematureEndProbability": 0,
+        "frontierProgress": 0.02693469047148474,
+        "resourceReserve": 1.1758052221547526,
+        "expectedSteps": 1,
+        "unresolvedProbability": 1.0000000000000004,
+        "transitionUnresolvedProbability": 0
+      },
+      "rootComplete": true,
+      "blockedReasons": null
+    },
+    {
+      "fixture": "user-report-alchemical-sequence.snapshot.json",
+      "recommendation": "invasive_refine",
+      "planning": {
+        "goalProbabilityLowerBound": 0,
+        "prematureEndProbability": 0,
+        "frontierProgress": 0.01799449643241407,
+        "resourceReserve": 1.1676587301587296,
+        "expectedSteps": 1,
+        "unresolvedProbability": 1.0000000000000002,
+        "transitionUnresolvedProbability": 0
+      },
+      "rootComplete": true,
+      "blockedReasons": null
+    },
+    {
+      "fixture": "user-report-fairy-recovery.snapshot.json",
+      "recommendation": "delayed_fusion",
+      "planning": {
+        "goalProbabilityLowerBound": 0,
+        "prematureEndProbability": 0,
+        "frontierProgress": 0.38830224007858016,
+        "resourceReserve": 0.3226967298790504,
+        "expectedSteps": 1,
+        "unresolvedProbability": 1.0000000000000002,
+        "transitionUnresolvedProbability": 0
+      },
+      "rootComplete": true,
+      "blockedReasons": null
+    },
+    {
+      "fixture": "user-report-focused-fusion-prereq.snapshot.json",
+      "recommendation": "tentative_fusion",
+      "planning": {
+        "goalProbabilityLowerBound": 0,
+        "prematureEndProbability": 0,
+        "frontierProgress": 0.001815987627986348,
+        "resourceReserve": 1.3848314606741572,
+        "expectedSteps": 1,
+        "unresolvedProbability": 1.0000000000000002,
+        "transitionUnresolvedProbability": 0
+      },
+      "rootComplete": true,
+      "blockedReasons": null
+    },
+    {
+      "fixture": "user-report-live-workshop-step-1.snapshot.json",
+      "recommendation": "invasive_refine",
+      "planning": {
+        "goalProbabilityLowerBound": 0,
+        "prematureEndProbability": 0,
+        "frontierProgress": 0.01799449643241407,
+        "resourceReserve": 1.1676587301587296,
+        "expectedSteps": 1,
+        "unresolvedProbability": 1.0000000000000002,
+        "transitionUnresolvedProbability": 0
+      },
+      "rootComplete": true,
+      "blockedReasons": null
+    },
+    {
+      "fixture": "user-report-live-workshop-step-2.snapshot.json",
+      "recommendation": "invasive_refine",
+      "planning": {
+        "goalProbabilityLowerBound": 0,
+        "prematureEndProbability": 0,
+        "frontierProgress": 0.01872244558959549,
+        "resourceReserve": 0.9841687552213867,
+        "expectedSteps": 1,
+        "unresolvedProbability": 1.0000000000000007,
+        "transitionUnresolvedProbability": 0
+      },
+      "rootComplete": true,
+      "blockedReasons": null
+    },
+    {
+      "fixture": "user-report-overcraft-endgame.snapshot.json",
+      "recommendation": "focus",
+      "planning": {
+        "goalProbabilityLowerBound": 0,
+        "prematureEndProbability": 0,
+        "frontierProgress": 0.06126980704900181,
+        "resourceReserve": 0.46176107940534067,
+        "expectedSteps": 2,
+        "unresolvedProbability": 1,
+        "transitionUnresolvedProbability": 0
+      },
+      "rootComplete": true,
+      "blockedReasons": null
+    },
+    {
+      "fixture": "user-report-pattern-step-1.snapshot.json",
+      "recommendation": null,
+      "planning": null,
+      "rootComplete": true,
+      "blockedReasons": [
+        {
+          "skillName": "Efficient Fusion",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Explosive Fusion",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Explosive Refinement",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Fairy's Blessing",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Focus",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Focused Fusion",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Focused Refine",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Forceful Stabilize",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Golden Path: Fifth Peak",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Golden Path: First Peak",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Golden Path: Second Peak",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Golden Path: Third Peak",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Harmonious Precision",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Restoring Brilliance",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Stabilizing Refinement",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Stellar Infusion",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Stellar Refinement",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Unstable Re-energisation",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        }
+      ]
+    },
+    {
+      "fixture": "user-report-pattern-step-2.snapshot.json",
+      "recommendation": "invasive_refine",
+      "planning": {
+        "goalProbabilityLowerBound": 0,
+        "prematureEndProbability": 0,
+        "frontierProgress": 0.01799449643241407,
+        "resourceReserve": 1.1676587301587296,
+        "expectedSteps": 1,
+        "unresolvedProbability": 1.0000000000000002,
+        "transitionUnresolvedProbability": 0
+      },
+      "rootComplete": true,
+      "blockedReasons": null
+    },
+    {
+      "fixture": "user-report-premature-finish-runway.snapshot.json",
+      "recommendation": "rapid_fusion",
+      "planning": {
+        "goalProbabilityLowerBound": 0,
+        "prematureEndProbability": 0,
+        "frontierProgress": 0.8873808743923043,
+        "resourceReserve": 1.2185082872928177,
+        "expectedSteps": 1,
+        "unresolvedProbability": 1,
+        "transitionUnresolvedProbability": 0
+      },
+      "rootComplete": true,
+      "blockedReasons": null
+    },
+    {
+      "fixture": "user-report-resonance-regression.snapshot.json",
+      "recommendation": null,
+      "planning": null,
+      "rootComplete": true,
+      "blockedReasons": [
+        {
+          "skillName": "Efficient Fusion",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Explosive Fusion",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Explosive Refinement",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Fairy's Blessing",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Focus",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Focused Fusion",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Focused Refine",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Forceful Stabilize",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Golden Path: Fifth Peak",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Golden Path: First Peak",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Golden Path: Second Peak",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Golden Path: Third Peak",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Harmonious Precision",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Restoring Brilliance",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Stabilizing Refinement",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Stellar Infusion",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Stellar Refinement",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        },
+        {
+          "skillName": "Unstable Re-energisation",
+          "reason": "unresolved",
+          "details": "Unresolved active buff definition: spirit_cauldron_construct"
+        }
+      ]
+    }
+  ]
+}

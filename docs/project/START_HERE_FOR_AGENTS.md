@@ -4,7 +4,7 @@ status: active
 authoritative: true
 owner: craftbuddy-maintainers
 game_version: 0.7.17-d8ae6ce
-last_verified: 2026-10-22
+last_verified: 2026-11-04
 source_of_truth: src/modContent/index.ts, src/optimizer/*, src/__tests__/*
 review_cycle_days: 30
 related_files:
@@ -17,6 +17,8 @@ related_files:
 ---
 
 # Start Here For Agents
+
+Current fork: **6.9.1**, with the constrained stochastic planner and scoped **0.7.18-97c093b** runtime verification. Start with `OPTIMIZER_DESIGN.md` and the latest section of `PR4_REVIEW_VALIDATION.md`. The 6.8.0 retarget notes below describe the inherited baseline; the Rust engine is now a retained EV reference, not the production safety authority. Upstream v7 has not been merged into this fork.
 
 CraftBuddy **6.8.0** targets AFNM **0.7.17** (build `0.7.17-d8ae6ce`, `afnm-types@0.7.17`). There are nine player-selected harmonies. Claims about item-kind harmony inference, a manual `Finish Craft`, Completion Bonus granting control, or Rust not seeing items are obsolete.
 

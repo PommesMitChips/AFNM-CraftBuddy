@@ -37,7 +37,7 @@ Inspect diffs for secrets, local paths that should not be committed, generated a
 
 - Do not claim a command passed unless it was run in this worktree.
 - `bun run test` takes ~5 minutes (`craftSimulation.test.ts` alone is ~290 s). Budget for it rather than skipping it.
-- `release:validate` does **not** cover the Rust crate or the benchmark contracts; run `wasm:test` / `optimizer:bench` separately when they are in scope.
+- `release:validate` includes the production fixed-work replay gate but does **not** cover the Rust crate; run `wasm:test` separately when it is in scope. Historical EV contracts are available as `optimizer:bench:legacy`.
 - Fix failures before committing unless the user explicitly approves skipping.
 - If docs changed, run docs inventory/check after the final edit.
 - If behavior changed but docs did not, explicitly confirm no authoritative docs are stale.

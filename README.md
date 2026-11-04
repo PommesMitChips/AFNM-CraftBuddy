@@ -2,7 +2,7 @@
 
 A mod for **Ascend From Nine Mountains** that calculates and displays the recommended next crafting action.
 
-This branch proposes a constrained stochastic planner for joint completion and perfection goals. It preserves discrete random outcomes, uses the action transition for survival checks, and reports unresolved planning rather than treating average progress as a guaranteed result. See [Optimizer Design](docs/project/OPTIMIZER_DESIGN.md) and [Mechanics Parity](docs/project/MECHANICS_PARITY.md) for behavior and limitations.
+This fork maintains a constrained stochastic planner for joint completion and perfection goals. It preserves discrete random outcomes, uses the action transition for survival checks, and reports unresolved planning rather than treating average progress as a guaranteed result. Upstream PR #4 was closed without merging; upstream selectively ported fixes into its separate releases. See [Optimizer Design](docs/project/OPTIMIZER_DESIGN.md) and [Mechanics Parity](docs/project/MECHANICS_PARITY.md) for behavior and limitations.
 
 ## Features
 
@@ -20,7 +20,7 @@ This branch proposes a constrained stochastic planner for joint completion and p
 - Large-number-safe parsing and formatting for late-game values
 - Snapshot export for bug reports and replayable optimizer debugging
 
-Proposed build **6.9.0**, based on **6.8.0**. Runtime corrections were checked against installed AFNM **0.7.18-97c093b**; this is scoped verification, not an exhaustive parity claim for every mechanic.
+Fork build **6.9.1**, based on **6.8.0**. Runtime corrections were checked against installed AFNM **0.7.18-97c093b**; this is scoped verification, not an exhaustive parity claim for every mechanic. The upstream Workshop release is a different build.
 
 ![CraftBuddy Workshop Preview](pictures/workshop_preview.png)
 
@@ -84,7 +84,7 @@ Depth, time, nodes, and beam width are coupled search-budget controls: pushing o
 
 ## Local Workshop Publish
 
-Historical publishing example for upstream 6.8.0 (requires the sibling uploader repo at `../ModUploader-AFNM`). The Workshop description below still describes that released version; this proposed 6.9.0 PR has not been published to Workshop. Choose final release copy and a change note before a future upload:
+Historical publishing example for upstream 6.8.0 (requires the sibling uploader repo at `../ModUploader-AFNM`). The Workshop description below describes that historical release; this fork has not been published to Workshop. Choose final release copy and a change note before a future upload:
 
 ```bash
 bun run workshop:upload -- --change-note "v6.8.0 - AFNM 0.7.17 compatibility and Returning Cycle support" --description-file docs/project/WORKSHOP_DESCRIPTION.md

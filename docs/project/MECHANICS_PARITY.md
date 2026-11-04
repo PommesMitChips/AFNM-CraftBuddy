@@ -4,7 +4,7 @@ status: active
 authoritative: true
 owner: craftbuddy-maintainers
 game_version: 0.7.17-d8ae6ce
-last_verified: 2026-10-29
+last_verified: 2026-11-04
 source_of_truth: src/optimizer/outcome.ts, src/optimizer/skills.ts, src/optimizer/harmony.ts, src/optimizer/harmonyRegistry.ts, src/optimizer/gameTypes.ts, src/optimizer/state.ts, src/optimizer/search.ts, src/optimizer/nativeMcts.ts, src/modContent/harmonyState.ts, crates/craftbuddy-engine/*
 review_cycle_days: 30
 related_files:
@@ -267,6 +267,8 @@ Stated plainly rather than tracked as pending work:
 - combat-side systems, including the combat auto-use path
 
 ## Resource transition audit, 0.7.18
+
+November follow-up: maximum-stability repair retains signed headroom across masteries, technique effects and buff losses until final cleanup. Concrete turns ceil the final penalty before clamping it. Native `BLc` changes the signed penalty directly; `gRc` performs rounding/clamping after ordinary decay. The retained Rust EV engine now bounds triggered Qi operations and refreshes the post-technique buff restoration cap. Its event model remains an approximation, not the production certification authority.
 
 Qi restoration is capped at each application; spending floors at zero and does not apply an upper cap. Native resource handlers observe the actual delta at that point in the action. Stability retains debt until action cleanup. Mastery resource frames, fresh payment/buff/event frames and item-versus-turn cleanup are distinct boundaries. The production discrete simulator now follows those resource operations in order, including boost/sign and fractional cases.
 

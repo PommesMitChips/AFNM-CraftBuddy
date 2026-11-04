@@ -518,7 +518,7 @@ function Harness() {
       onAutoModeArm={() => {}}
       onAutoModeStop={() => {}}
       onAutoModePolicyChange={() => {}}
-      version="6.9.0"
+      version="6.9.1"
     />
   );
 

@@ -16,6 +16,62 @@ const observer: BuffDefinition = {
   ],
 };
 
+test.each(['completion', 'perfection'] as const)(
+  'resource callbacks in a later mastery observe completed earlier %s progress',
+  (bar) => {
+    const listener: BuffDefinition = {
+      name: 'Resource observer',
+      canStack: false,
+      effects: [],
+      triggeredEffects: [
+        {
+          trigger: 'poolRestored',
+          effects: [
+            {
+              kind: 'setState',
+              key: 'observed',
+              value: { value: 1, stat: bar },
+            },
+          ],
+        },
+      ],
+    };
+    const skill = retargetSkill({
+      qiCost: 0,
+      stabilityCost: 1,
+      masteryEntries: [
+        { kind: 'effect', effects: [{ kind: bar, amount: { value: 50 } }] },
+        { kind: 'effect', effects: [{ kind: 'pool', amount: { value: 1 } }] },
+      ],
+    });
+    const state = new CraftingState({
+      qi: 50,
+      stability: 20,
+      buffs: new Map([
+        [
+          'resource_observer',
+          { name: listener.name, stacks: 1, definition: listener },
+        ],
+      ]),
+    });
+    const result = applySkillOutcomes(
+      state,
+      skill,
+      retargetConfig(skill),
+      [],
+      100,
+      'neutral',
+      100,
+    );
+    expect(result.unresolvedProbability).toBe(0);
+    expect(result.outcomes).toHaveLength(1);
+    expect(
+      result.outcomes[0].state.buffs.get('resource_observer')?.internalState
+        ?.observed,
+    ).toBe(50);
+  },
+);
+
 test.each([false, true])(
   'creating a bar listener inside the same progress block stays unresolved (before: %s)',
   (before) => {

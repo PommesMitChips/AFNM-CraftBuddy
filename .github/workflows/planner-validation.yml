@@ -1,0 +1,27 @@
+name: Planner validation
+on:
+  pull_request:
+  push:
+    branches: [main, fix/constrained-crafting-planner]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: dtolnay/rust-toolchain@stable
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test --runInBand
+      - run: bun run wasm:test
+      - run: bun run optimizer:bench
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: planner-digest
+          path: tmp/planner-digest.json
